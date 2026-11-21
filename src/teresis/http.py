@@ -4,7 +4,7 @@
     GET  /tools                -> MCP tool definitions (same names and arguments)
     POST /tools/<tool_name>    -> body: tool arguments as JSON; reply: {"result": text, ...data}
 
-Binds to 127.0.0.1 by default. Set MNEMO_HTTP_TOKEN to require `Authorization: Bearer <token>`.
+Binds to 127.0.0.1 by default. Set TERESIS_HTTP_TOKEN to require `Authorization: Bearer <token>`.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ _MAX_BODY = 1 << 20
 
 def make_handler(server: Server, token: str | None):
     class Handler(BaseHTTPRequestHandler):
-        server_version = f"mnemo/{__version__}"
+        server_version = f"teresis/{__version__}"
 
         def log_message(self, *args):  # quiet by default
             pass
@@ -76,8 +76,8 @@ def make_handler(server: Server, token: str | None):
 
 
 def serve(store: MemoryStore, *, host: str = "127.0.0.1", port: int = 7077, default_scope="global") -> None:
-    httpd = ThreadingHTTPServer((host, port), make_handler(Server(store, default_scope), os.environ.get("MNEMO_HTTP_TOKEN")))
-    print(f"mnemo http listening on http://{host}:{port}", flush=True)
+    httpd = ThreadingHTTPServer((host, port), make_handler(Server(store, default_scope), os.environ.get("TERESIS_HTTP_TOKEN")))
+    print(f"teresis http listening on http://{host}:{port}", flush=True)
     try:
         httpd.serve_forever()
     finally:

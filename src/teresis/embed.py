@@ -2,9 +2,9 @@
 
 Configure with environment variables:
 
-    MNEMO_EMBED=ollama   MNEMO_EMBED_MODEL=nomic-embed-text   [MNEMO_EMBED_URL=http://localhost:11434]
-    MNEMO_EMBED=openai   MNEMO_EMBED_MODEL=text-embedding-3-small  MNEMO_EMBED_URL=http://host/v1
-                         [MNEMO_EMBED_KEY=...]   (any OpenAI-compatible server: llama.cpp, vLLM, LM Studio)
+    TERESIS_EMBED=ollama   TERESIS_EMBED_MODEL=nomic-embed-text   [TERESIS_EMBED_URL=http://localhost:11434]
+    TERESIS_EMBED=openai   TERESIS_EMBED_MODEL=text-embedding-3-small  TERESIS_EMBED_URL=http://host/v1
+                         [TERESIS_EMBED_KEY=...]   (any OpenAI-compatible server: llama.cpp, vLLM, LM Studio)
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class Embedder(Protocol):
 
 
 def _post(url: str, payload: dict, headers: dict | None = None, timeout: float | None = None) -> dict:
-    timeout = timeout or float(os.environ.get("MNEMO_EMBED_TIMEOUT", "120"))
+    timeout = timeout or float(os.environ.get("TERESIS_EMBED_TIMEOUT", "120"))
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode(),
@@ -62,20 +62,20 @@ class OpenAIEmbedder:
 
 
 def from_env() -> Embedder | None:
-    kind = os.environ.get("MNEMO_EMBED", "").strip().lower()
+    kind = os.environ.get("TERESIS_EMBED", "").strip().lower()
     if not kind or kind == "none":
         return None
-    model = os.environ.get("MNEMO_EMBED_MODEL")
+    model = os.environ.get("TERESIS_EMBED_MODEL")
     if not model:
-        raise ValueError("MNEMO_EMBED_MODEL is required when MNEMO_EMBED is set")
+        raise ValueError("TERESIS_EMBED_MODEL is required when TERESIS_EMBED is set")
     if kind == "ollama":
-        return OllamaEmbedder(model, os.environ.get("MNEMO_EMBED_URL", "http://localhost:11434"))
+        return OllamaEmbedder(model, os.environ.get("TERESIS_EMBED_URL", "http://localhost:11434"))
     if kind == "openai":
-        url = os.environ.get("MNEMO_EMBED_URL")
+        url = os.environ.get("TERESIS_EMBED_URL")
         if not url:
-            raise ValueError("MNEMO_EMBED_URL is required for MNEMO_EMBED=openai")
-        return OpenAIEmbedder(model, url, os.environ.get("MNEMO_EMBED_KEY"))
-    raise ValueError(f"unknown MNEMO_EMBED provider: {kind!r}")
+            raise ValueError("TERESIS_EMBED_URL is required for TERESIS_EMBED=openai")
+        return OpenAIEmbedder(model, url, os.environ.get("TERESIS_EMBED_KEY"))
+    raise ValueError(f"unknown TERESIS_EMBED provider: {kind!r}")
 
 
 def pack(vec: Sequence[float]) -> bytes:

@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mnemo import MemoryStore, scope_chain
-from mnemo.mcp import Server
-from mnemo.store import DAY
+from teresis import MemoryStore, scope_chain
+from teresis.mcp import Server
+from teresis.store import DAY
 
 
 class Clock:

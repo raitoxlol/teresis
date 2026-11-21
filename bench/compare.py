@@ -5,12 +5,12 @@ Every system ingests the same units (one user/assistant round, max 2000 chars) o
 we score session-level retrieval like the LongMemEval paper: recall_any@k, recall_all@k, NDCG@10.
 Abstention questions (no evidence session) are skipped.
 
-    python bench/compare.py --data .data/longmemeval_s.json --system mnemo --limit 0 --out .data/results
-    systems: naive | mnemo | mnemo-emb | holographic | mem0
+    python bench/compare.py --data .data/longmemeval_s.json --system teresis --limit 0 --out .data/results
+    systems: naive | teresis | teresis-emb | holographic | mem0
 
 `holographic` loads the plugin from a Hermes checkout (--hermes, default ~/.hermes/hermes-agent).
-`mem0` needs `pip install mem0ai ollama` and Ollama (model from MNEMO_EMBED_MODEL, dims BENCH_EMBED_DIMS); it runs with infer=False (no LLM).
-`mnemo-emb` needs MNEMO_EMBED=ollama MNEMO_EMBED_MODEL=<model>.
+`mem0` needs `pip install mem0ai ollama` and Ollama (model from TERESIS_EMBED_MODEL, dims BENCH_EMBED_DIMS); it runs with infer=False (no LLM).
+`teresis-emb` needs TERESIS_EMBED=ollama TERESIS_EMBED_MODEL=<model>.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ class Naive:
         self.c.executemany("INSERT INTO u(sid, text, t) VALUES (?,?,?)", units)
 
     def search(self, query, now):
-        from mnemo.text import tokens
+        from teresis.text import tokens
         toks = tokens(query) or tokens(query, keep_stopwords=True)
         where = " OR ".join("lower(text) LIKE ?" for _ in toks) or "1"
         return [r[0] for r in self.c.execute(f"SELECT sid FROM u WHERE {where} ORDER BY t DESC LIMIT {TOPN}",
@@ -82,19 +82,19 @@ class Naive:
         self.c.close()
 
 
-class Mnemo:
-    name = "mnemo"
+class Teresis:
+    name = "teresis"
 
     def __init__(self, tmp: Path, embed: bool = False):
-        from mnemo import MemoryStore
+        from teresis import MemoryStore
         self.clock = {"t": 0.0}
         self.embed = embed
         self.s = MemoryStore(tmp / "m.db", embedder=None, clock=lambda: self.clock["t"])
         if embed:
-            from mnemo.embed import from_env
+            from teresis.embed import from_env
             self.emb = from_env()
             if self.emb is None:
-                raise SystemExit("mnemo-emb needs MNEMO_EMBED / MNEMO_EMBED_MODEL")
+                raise SystemExit("teresis-emb needs TERESIS_EMBED / TERESIS_EMBED_MODEL")
         self.sid = {}
 
     def add_all(self, units):
@@ -157,7 +157,7 @@ class Mem0:
         from mem0 import Memory
         if Mem0._m is None:
             url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-            model = os.environ.get("MNEMO_EMBED_MODEL", "all-minilm")
+            model = os.environ.get("TERESIS_EMBED_MODEL", "all-minilm")
             dims = int(os.environ.get("BENCH_EMBED_DIMS", "384"))
             Mem0._dir = Path(tempfile.mkdtemp(prefix="mem0bench"))
             Mem0._m = Memory.from_config({
@@ -169,7 +169,7 @@ class Mem0:
                 "history_db_path": str(Mem0._dir / "hist.db"),
             })
         self.m = Mem0._m
-        self.name = f"mem0 OSS (infer=False, {os.environ.get('MNEMO_EMBED_MODEL', 'all-minilm')})"
+        self.name = f"mem0 OSS (infer=False, {os.environ.get('TERESIS_EMBED_MODEL', 'all-minilm')})"
         self.user = f"q{random.getrandbits(48):x}"
 
     def _install_cache(self):
@@ -177,9 +177,9 @@ class Mem0:
         Storage and search are mem0's unchanged code; a cache miss falls back to mem0's normal call."""
         if getattr(Mem0, "_cache", None) is not None:
             return
-        from mnemo.embed import OllamaEmbedder
+        from teresis.embed import OllamaEmbedder
         Mem0._cache, Mem0._misses = {}, 0
-        Mem0._batch = OllamaEmbedder(os.environ.get("MNEMO_EMBED_MODEL", "all-minilm"),
+        Mem0._batch = OllamaEmbedder(os.environ.get("TERESIS_EMBED_MODEL", "all-minilm"),
                                      os.environ.get("OLLAMA_URL", "http://localhost:11434"))
         emb = self.m.embedding_model
         orig = emb.embed
@@ -215,11 +215,11 @@ class Mem0:
 def make(system: str, tmp: Path, hermes: Path):
     if system == "naive":
         return Naive(tmp)
-    if system == "mnemo":
-        return Mnemo(tmp)
-    if system == "mnemo-emb":
-        a = Mnemo(tmp, embed=True)
-        a.name = f"mnemo + {os.environ.get('MNEMO_EMBED_MODEL')}"
+    if system == "teresis":
+        return Teresis(tmp)
+    if system == "teresis-emb":
+        a = Teresis(tmp, embed=True)
+        a.name = f"teresis + {os.environ.get('TERESIS_EMBED_MODEL')}"
         return a
     if system == "holographic":
         return Holographic(tmp, hermes)

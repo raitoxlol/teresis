@@ -1,4 +1,4 @@
-"""Command line interface: `mnemo <command>`."""
+"""Command line interface: `teresis <command>`."""
 
 from __future__ import annotations
 
@@ -26,10 +26,10 @@ def _print_mems(mems, as_json: bool) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="mnemo", description="Local long-term memory for agents.")
-    p.add_argument("--db", help="database path (default $MNEMO_DB or ~/.local/share/mnemo/memory.db)")
+    p = argparse.ArgumentParser(prog="teresis", description="Local long-term memory for agents.")
+    p.add_argument("--db", help="database path (default $TERESIS_DB or ~/.local/share/teresis/memory.db)")
     p.add_argument("--json", action="store_true", help="machine-readable output")
-    p.add_argument("--version", action="version", version=f"mnemo {__version__}")
+    p.add_argument("--version", action="version", version=f"teresis {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     r = sub.add_parser("remember", help="store a memory")
@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     hm = sub.add_parser("hermes", help="Hermes Agent integration")
     hm_sub = hm.add_subparsers(dest="hermes_cmd", required=True)
-    hi = hm_sub.add_parser("install", help="install the mnemo memory provider plugin into a Hermes home")
+    hi = hm_sub.add_parser("install", help="install the teresis memory provider plugin into a Hermes home")
     hi.add_argument("--home", default=None, help="Hermes home (default $HERMES_HOME or ~/.hermes)")
     hi.add_argument("--link", action="store_true", help="symlink this checkout instead of copying (dev)")
 
@@ -117,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
 
         home = args.home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
         dest = install(home, link=args.link)
-        print(f"installed mnemo provider at {dest}\nactivate: hermes config set memory.provider mnemo")
+        print(f"installed teresis provider at {dest}\nactivate: hermes config set memory.provider teresis")
         return 0
 
     store = MemoryStore(args.db)
@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
 
             serve(store, host=args.host, port=args.port, default_scope=args.scope or ["global"])
     except (KeyError, ValueError, RuntimeError) as exc:
-        print(f"mnemo: {exc}", file=sys.stderr)
+        print(f"teresis: {exc}", file=sys.stderr)
         return 1
     finally:
         store.close()

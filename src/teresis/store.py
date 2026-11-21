@@ -18,7 +18,7 @@ from typing import Any, Iterable, Iterator, Sequence
 from . import embed as _embed
 from . import text as T
 
-log = logging.getLogger("mnemo")
+log = logging.getLogger("teresis")
 
 SCHEMA_VERSION = 1
 DAY = 86400.0
@@ -81,14 +81,14 @@ CREATE TABLE IF NOT EXISTS vectors (
 
 
 def default_db_path() -> Path:
-    if env := os.environ.get("MNEMO_DB"):
+    if env := os.environ.get("TERESIS_DB"):
         return Path(env).expanduser()
     base = os.environ.get("XDG_DATA_HOME") or os.path.join(Path.home(), ".local", "share")
-    return Path(base) / "mnemo" / "memory.db"
+    return Path(base) / "teresis" / "memory.db"
 
 
 def scope_chain(scope: str) -> list[str]:
-    """'project/mnemo/agent-a' -> ['project/mnemo/agent-a', 'project/mnemo', 'project', 'global']."""
+    """'project/teresis/agent-a' -> ['project/teresis/agent-a', 'project/teresis', 'project', 'global']."""
     parts = [p for p in scope.strip("/").split("/") if p]
     chain = ["/".join(parts[:i]) for i in range(len(parts), 0, -1)]
     if "global" not in chain:
@@ -148,11 +148,11 @@ class RememberResult:
 
 @dataclass
 class Weights:
-    """Retrieval tuning. Defaults were picked on the bundled benchmark (see mnemo.bench)."""
+    """Retrieval tuning. Defaults tuned on LongMemEval dev (n=80) and teresis.bench."""
 
     fts: float = 1.0
     trigram: float = 0.35
-    vector: float = 1.0
+    vector: float = 2.0
     candidates: int = 60
     half_life_days: float = 30.0
     recency: float = 0.15  # max share of the score that recency can remove
@@ -160,7 +160,8 @@ class Weights:
     access: float = 0.02
     pinned_boost: float = 1.05
     min_trigram_overlap: float = 0.5
-    min_cosine: float = 0.2
+    min_cosine: float = 0.0
+    mmr: float = 0.0  # diversity penalty (0 = off): demotes near-copies of already-picked results
     dup_jaccard: float = 0.9
     refine_containment: float = 0.9
 
@@ -574,10 +575,33 @@ class MemoryStore:
                            "relevance": round(relevance, 4), "recency": round(recency, 4)}
             scored.append(mem)
         scored.sort(key=lambda m: m.score or 0, reverse=True)
+        if w.mmr > 0:
+            scored = self._mmr(scored, w.mmr)
         out = self._pack(scored, k, budget_tokens)
         if touch and as_of is None:
             self._touch([m.id for m in out])
         return out
+
+    @staticmethod
+    def _mmr(mems: list[Memory], penalty: float, pool: int = 100) -> list[Memory]:
+        """Greedy maximal-marginal-relevance re-rank on term overlap (no embeddings needed)."""
+        head, tail = mems[:pool], mems[pool:]
+        if not head:
+            return mems
+        top = head[0].score or 1.0
+        terms = [T.term_set(m.content) for m in head]
+        picked: list[int] = []
+        left = set(range(len(head)))
+        max_sim = [0.0] * len(head)  # similarity to the closest already-picked result
+        while left:
+            best = max(left, key=lambda i: (head[i].score or 0) - penalty * top * max_sim[i])
+            picked.append(best)
+            left.discard(best)
+            for i in left:
+                s = T.jaccard(terms[i], terms[best])
+                if s > max_sim[i]:
+                    max_sim[i] = s
+        return [head[i] for i in picked] + tail
 
     def _browse(self, where, params, k, budget_tokens, touch) -> list[Memory]:
         rows = self._q(f"SELECT * FROM memories m WHERE {where} ORDER BY pinned DESC, importance DESC, "
@@ -732,7 +756,7 @@ class MemoryStore:
     def embed_missing(self, batch: int = 32) -> int:
         """Backfill vectors (after enabling an embedder or an outage)."""
         if not self.embedder:
-            raise RuntimeError("no embedder configured (set MNEMO_EMBED)")
+            raise RuntimeError("no embedder configured (set TERESIS_EMBED)")
         done = 0
         while True:
             rows = self._q(

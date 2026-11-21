@@ -1,13 +1,13 @@
-"""Hermes Agent memory provider (``memory.provider: mnemo``).
+"""Hermes Agent memory provider (``memory.provider: teresis``).
 
-Install into a Hermes home with ``mnemo hermes install`` (copies this package to
-``$HERMES_HOME/plugins/mnemo/``), or ``pip install`` mnemo into the Hermes venv (entry point
-``hermes_agent.memory_providers``). Config lives in ``config.yaml`` under ``plugins.mnemo``.
+Install into a Hermes home with ``teresis hermes install`` (copies this package to
+``$HERMES_HOME/plugins/teresis/``), or ``pip install`` teresis into the Hermes venv (entry point
+``hermes_agent.memory_providers``). Config lives in ``config.yaml`` under ``plugins.teresis``.
 
 Behavior, per Hermes' MemoryProvider contract:
 - prefetch: hybrid recall over the agent scope + ``user`` scope, injected before each turn.
 - sync_turn: stores the turn as a short-lived ``episode`` and extracts durable preferences/decisions.
-- on_memory_write: mirrors Hermes' built-in memory tool (add / replace / remove) into mnemo.
+- on_memory_write: mirrors Hermes' built-in memory tool (add / replace / remove) into teresis.
 - on_pre_compress / on_delegation: saves what would otherwise be lost to compression or a subagent.
 - Subagent, cron and flush contexts never write (they only read).
 """
@@ -26,7 +26,7 @@ from . import extract as _extract
 from .mcp import TOOLS, Server
 from .store import MemoryStore, default_db_path
 
-log = logging.getLogger("mnemo.hermes")
+log = logging.getLogger("teresis.hermes")
 
 try:  # running inside Hermes
     from agent.memory_provider import MemoryProvider as _Base
@@ -43,12 +43,12 @@ except Exception:
         return not t or t.startswith("/") or t in {"ok", "okay", "yes", "no", "thanks", "thank you", "hi", "hey",
                                                     "continue", "go ahead", "do it", "done", "next", "lgtm", "k"}
 
-PLUGIN_KEY = "mnemo"
+PLUGIN_KEY = "teresis"
 _NO_WRITE_CONTEXTS = {"subagent", "cron", "flush"}
 _WRITE_TOOLS = {"memory_remember", "memory_update", "memory_forget", "memory_feedback"}
 
 DEFAULTS: Dict[str, Any] = {
-    "db_path": "",             # empty: $MNEMO_DB, else ~/.local/share/mnemo/memory.db (shared with MCP agents)
+    "db_path": "",             # empty: $TERESIS_DB, else ~/.local/share/teresis/memory.db (shared with MCP agents)
     "scope": "",               # empty: hermes/<agent_identity>
     "extra_scopes": "user",    # comma-separated scopes also searched on recall
     "prefetch_k": 6,
@@ -81,8 +81,8 @@ def _openai_schemas() -> List[Dict[str, Any]]:
     return [{"name": t["name"], "description": t["description"], "parameters": t["inputSchema"]} for t in TOOLS]
 
 
-class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
-    """Local hybrid-search memory shared with every other mnemo client on the machine."""
+class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
+    """Local hybrid-search memory shared with every other teresis client on the machine."""
 
     pre_compress_checkpoint_api_version = 1
 
@@ -99,7 +99,7 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
     # -- identity ----------------------------------------------------------
     @property
     def name(self) -> str:
-        return "mnemo"
+        return "teresis"
 
     def is_available(self) -> bool:
         try:
@@ -111,7 +111,7 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             return False
 
     def unavailable_reason(self) -> str:
-        return "mnemo needs SQLite 3.34+ with FTS5 (trigram tokenizer) in this Python."
+        return "teresis needs SQLite 3.34+ with FTS5 (trigram tokenizer) in this Python."
 
     # -- lifecycle ---------------------------------------------------------
     def _db_path(self, hermes_home: str) -> str:
@@ -137,7 +137,7 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             try:
                 self._store.close()
             except Exception as exc:
-                log.debug("mnemo close failed: %s", exc)
+                log.debug("teresis close failed: %s", exc)
         self._store = self._server = None
 
     def on_session_switch(self, new_session_id: str, *, parent_session_id: str = "", reset: bool = False,
@@ -149,7 +149,7 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         if not self._store:
             return ""
         return (
-            "# Long-term memory (mnemo)\n"
+            "# Long-term memory (teresis)\n"
             f"Relevant memories are injected before each turn. Your scope: `{self._scope}`; "
             f"recall also searches {', '.join(f'`{s}`' for s in self._read_scopes[1:]) or 'nothing else'} and `global`.\n"
             "- Save durable facts, preferences, decisions and lessons with memory_remember (one fact per call). "
@@ -176,7 +176,7 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             facts = self._store.recall(query, scope=self._read_scopes, k=k, budget_tokens=budget,
                                        exclude_kinds=["episode"])
             facts = [m for m in facts if (m.score or 0) >= 0.15]
-            blocks = [self._format(facts, "Long-term memory (mnemo)")] if facts else []
+            blocks = [self._format(facts, "Long-term memory (teresis)")] if facts else []
             if _truthy(self._config.get("capture_turns", True)):
                 eps = self._store.recall(query, scope=[self._scope], inherit=False, kinds=["episode"], k=2)
                 eps = [m for m in eps if (m.score or 0) >= 0.3]
@@ -186,13 +186,13 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             self._last_count = len(facts)
             return "\n\n".join(blocks)
         except Exception as exc:
-            log.debug("mnemo prefetch failed: %s", exc)
+            log.debug("teresis prefetch failed: %s", exc)
             return ""
 
     def recall_status(self):
         if not self._last_count or _RecallStatus is None:
             return None
-        return _RecallStatus(provider_label="mnemo", count=self._last_count)
+        return _RecallStatus(provider_label="teresis", count=self._last_count)
 
     # -- writes ------------------------------------------------------------
     def _save_extracted(self, text: str, source: str) -> List[str]:
@@ -205,7 +205,7 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
                                      source=source, meta={"session_id": self._session_id})
                 saved.append(content)
             except Exception as exc:
-                log.debug("mnemo extract save failed: %s", exc)
+                log.debug("teresis extract save failed: %s", exc)
         return saved
 
     def sync_turn(self, user_content: str, assistant_content: str, *, session_id: str = "",
@@ -227,7 +227,7 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             if _truthy(self._config.get("auto_extract", True)):
                 self._save_extracted(user_content, "hermes:auto-extract")
         except Exception as exc:
-            log.debug("mnemo sync_turn failed: %s", exc)
+            log.debug("teresis sync_turn failed: %s", exc)
 
     def on_memory_write(self, action: str, target: str, content: str,
                         metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -250,7 +250,7 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
                 if old:
                     self._store.forget(old.id)
         except Exception as exc:
-            log.debug("mnemo on_memory_write failed: %s", exc)
+            log.debug("teresis on_memory_write failed: %s", exc)
 
     def on_pre_compress(self, messages: List[Dict[str, Any]]) -> str:
         if not (self._store and self._write_enabled and _truthy(self._config.get("auto_extract", True))):
@@ -274,7 +274,7 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
                 source="hermes:delegation", meta={"child_session_id": child_session_id},
             )
         except Exception as exc:
-            log.debug("mnemo on_delegation failed: %s", exc)
+            log.debug("teresis on_delegation failed: %s", exc)
 
     # -- tools -------------------------------------------------------------
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
@@ -282,7 +282,7 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
 
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         if not self._server:
-            return json.dumps({"error": "mnemo is not initialized"})
+            return json.dumps({"error": "teresis is not initialized"})
         if tool_name in _WRITE_TOOLS and not self._write_enabled:
             return json.dumps({"error": "memory writes are disabled in this agent context (subagent/cron/flush)"})
         try:
@@ -294,8 +294,8 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
     # -- setup -------------------------------------------------------------
     def get_config_schema(self) -> List[Dict[str, Any]]:
         return [
-            {"key": "db_path", "description": "SQLite file. Empty = shared ~/.local/share/mnemo/memory.db "
-             "(same store your MCP agents use). Use $HERMES_HOME/mnemo.db to isolate per profile.", "default": ""},
+            {"key": "db_path", "description": "SQLite file. Empty = shared ~/.local/share/teresis/memory.db "
+             "(same store your MCP agents use). Use $HERMES_HOME/teresis.db to isolate per profile.", "default": ""},
             {"key": "scope", "description": "Write scope. Empty = hermes/<profile>.", "default": ""},
             {"key": "extra_scopes", "description": "Comma-separated scopes also searched on recall.", "default": "user"},
             {"key": "capture_turns", "description": "Store each turn as a short-lived episode.", "type": "boolean",
@@ -321,27 +321,27 @@ class MnemoMemoryProvider(_Base):  # type: ignore[misc,valid-type]
 
 def register(ctx) -> None:
     """Hermes plugin entry point."""
-    ctx.register_memory_provider(MnemoMemoryProvider())
+    ctx.register_memory_provider(TeresisMemoryProvider())
 
 
-_PLUGIN_INIT = '''"""mnemo memory provider for Hermes (MemoryProvider). Generated by `mnemo hermes install`."""
-from .mnemo.hermes import MnemoMemoryProvider, register  # noqa: F401  (register_memory_provider)
+_PLUGIN_INIT = '''"""teresis memory provider for Hermes (MemoryProvider). Generated by `teresis hermes install`."""
+from .teresis.hermes import TeresisMemoryProvider, register  # noqa: F401  (register_memory_provider)
 '''
 
-_PLUGIN_YAML = """name: mnemo
+_PLUGIN_YAML = """name: teresis
 version: {version}
-description: "mnemo — local hybrid-search memory (SQLite FTS5 + trigram + optional embeddings), shared with MCP agents."
+description: "teresis — local hybrid-search memory (SQLite FTS5 + trigram + optional embeddings), shared with MCP agents."
 """
 
 
 def install(hermes_home: str | os.PathLike, *, link: bool = False) -> Path:
-    """Install the plugin into ``$HERMES_HOME/plugins/mnemo``. ``link`` symlinks the package (dev mode)."""
+    """Install the plugin into ``$HERMES_HOME/plugins/teresis``. ``link`` symlinks the package (dev mode)."""
     from . import __version__
 
     pkg = Path(__file__).resolve().parent
     dest = Path(hermes_home).expanduser() / "plugins" / PLUGIN_KEY
     dest.mkdir(parents=True, exist_ok=True)
-    target = dest / "mnemo"
+    target = dest / "teresis"
     if target.is_symlink() or target.is_file():
         target.unlink()
     elif target.exists():

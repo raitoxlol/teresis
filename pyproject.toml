@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mnemo"
+name = "teresis"
 version = "0.1.0"
 description = "Local, zero-dependency long-term memory provider for AI agents (SQLite FTS5 + optional vectors, MCP server)."
 readme = "README.md"
@@ -15,10 +15,10 @@ dependencies = []
 fast = ["numpy>=1.24"]
 
 [project.scripts]
-mnemo = "mnemo.cli:main"
+teresis = "teresis.cli:main"
 
 [project.entry-points."hermes_agent.memory_providers"]
-mnemo = "mnemo.hermes"
+teresis = "teresis.hermes"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,4 +1,4 @@
-"""mnemo: local, zero-dependency long-term memory for agents."""
+"""teresis: local, zero-dependency long-term memory for agents."""
 
 __version__ = "0.1.0"
 

@@ -11,7 +11,7 @@ from .store import MemoryStore
 
 SUPPORTED = ("2025-06-18", "2025-03-26", "2024-11-05")
 
-INSTRUCTIONS = """mnemo is persistent long-term memory shared across sessions and agents.
+INSTRUCTIONS = """teresis is persistent long-term memory shared across sessions and agents.
 - At the start of a task call memory_context (or memory_recall with the task) for the relevant scope.
 - Save durable facts, user preferences, decisions, and lessons with memory_remember. One fact per call.
 - For facts that change over time, pass a stable `key` (e.g. "user.editor", "project.db"): the new value
@@ -215,7 +215,7 @@ class Server:
                 result = {
                     "protocolVersion": want if want in SUPPORTED else SUPPORTED[0],
                     "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": "mnemo", "version": __version__},
+                    "serverInfo": {"name": "teresis", "version": __version__},
                     "instructions": INSTRUCTIONS,
                 }
             elif method == "ping":

@@ -1,6 +1,6 @@
 """Retrieval benchmark: quality (hit@k, MRR, leaks) with distractors, ablations, and latency at scale.
 
-Run: `mnemo bench` or `python -m mnemo.bench`.
+Run: `teresis bench` or `python -m teresis.bench`.
 Categories are reported separately so weak spots (e.g. paraphrase without embeddings) stay visible.
 """
 
@@ -180,16 +180,16 @@ def naive_search(db: Path):
 def quality(distractors: int = 2000) -> list[Result]:
     results = []
     configs = {
-        "mnemo (full)": Weights(),
-        "mnemo w/o trigram": Weights(trigram=0.0),
-        "mnemo w/o recency+importance": Weights(recency=0.0, importance=0.0, access=0.0),
+        "teresis (full)": Weights(),
+        "teresis w/o trigram": Weights(trigram=0.0),
+        "teresis w/o recency+importance": Weights(recency=0.0, importance=0.0, access=0.0),
     }
     with tempfile.TemporaryDirectory() as d:
         for name, w in configs.items():
             path = Path(d) / f"{len(results)}.db"
             store, labels = build_store(path, w, distractors)
             results.append(evaluate(name, lambda q, s: [m.id for m in store.recall(q, scope=s, k=10, touch=False)], labels))
-            if name == "mnemo (full)":
+            if name == "teresis (full)":
                 results.append(evaluate("naive LIKE baseline", naive_search(path), labels))
             store.close()
     return results

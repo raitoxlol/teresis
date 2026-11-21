@@ -1,7 +1,7 @@
 {
  "summary": {
-  "system": "mnemo",
-  "key": "mnemo",
+  "system": "teresis",
+  "key": "teresis",
   "n": 470,
   "limit": 0,
   "recall_any@5": 0.9681,

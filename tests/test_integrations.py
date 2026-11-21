@@ -6,11 +6,11 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from mnemo import MemoryStore
-from mnemo.extract import extract
-from mnemo.hermes import MnemoMemoryProvider, install
-from mnemo.http import make_handler
-from mnemo.mcp import Server
+from teresis import MemoryStore
+from teresis.extract import extract
+from teresis.hermes import TeresisMemoryProvider, install
+from teresis.http import make_handler
+from teresis.mcp import Server
 
 
 class ExtractTests(unittest.TestCase):
@@ -48,6 +48,24 @@ class StoreExtrasTests(unittest.TestCase):
         self.assertEqual(len(pairs), 1)
         self.assertIn("Neovim", pairs[0]["newer"]["content"])
 
+    def test_tuned_weight_defaults(self):
+        from teresis import Weights
+        w = Weights()
+        self.assertEqual(w.vector, 2.0)
+        self.assertEqual(w.min_cosine, 0.0)
+        self.assertEqual(w.mmr, 0.0)
+
+    def test_mmr_diversifies(self):
+        from teresis import Weights
+        for i in range(4):
+            self.s.remember(f"Deploy pipeline step {i}: deploy pipeline builds the image", scope="p")
+        other = self.s.remember("The deploy pipeline also posts release notes to the shared channel", scope="p")
+        plain = [m.id for m in self.s.recall("deploy pipeline", scope="p", k=3, touch=False)]
+        self.s.w = Weights(mmr=0.6)
+        diverse = [m.id for m in self.s.recall("deploy pipeline", scope="p", k=3, touch=False)]
+        self.assertNotIn(other.id, plain)  # near-copies crowd it out without MMR
+        self.assertIn(other.id, diverse)
+
     def test_find_and_exclude_kinds(self):
         self.s.remember("Talked about deploy pipeline", scope="p", kind="episode")
         f = self.s.remember("Deploy pipeline uses GitHub Actions", scope="p")
@@ -65,7 +83,7 @@ class HermesProviderTests(unittest.TestCase):
         self.d.cleanup()
 
     def provider(self, **init):
-        p = MnemoMemoryProvider(config={"db_path": self.db})
+        p = TeresisMemoryProvider(config={"db_path": self.db})
         self.assertTrue(p.is_available())
         p.initialize("sess-1", hermes_home=self.d.name, platform="cli", agent_identity="max", **init)
         return p
@@ -112,10 +130,10 @@ class HermesProviderTests(unittest.TestCase):
         dest = install(self.d.name)
         init = (dest / "__init__.py").read_text()
         self.assertIn("register_memory_provider", init)
-        self.assertTrue((dest / "mnemo" / "hermes.py").exists())
+        self.assertTrue((dest / "teresis" / "hermes.py").exists())
         self.assertTrue((dest / "plugin.yaml").exists())
         dest = install(self.d.name, link=True)  # re-install over a copy
-        self.assertTrue((dest / "mnemo").is_symlink())
+        self.assertTrue((dest / "teresis").is_symlink())
 
 
 class HttpTests(unittest.TestCase):
