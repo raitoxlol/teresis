@@ -21,7 +21,7 @@ import subprocess
 import time
 from pathlib import Path
 
-REFUSE = re.compile(r"don'?t (?:have|know)|do not (?:have|know)|no (?:record|memory|info)|not (?:sure|aware)|"
+REFUSE = re.compile(r"don'?t (?:have|know|remember)|do not (?:have|know)|no (?:record|memory|info)|not (?:sure|aware)|"
                     r"haven'?t (?:told|shared|mentioned)|unknown|can'?t (?:find|recall)|couldn'?t|no idea|"
                     r"not (?:in|stored)|isn'?t (?:in|something)", re.I)
 
@@ -96,6 +96,84 @@ def scenarios(seed: int = 42) -> dict:
     return {"S": S}
 
 
+COLORS = ["amber", "azure", "coral", "indigo", "ivory", "jade", "khaki", "lilac", "maroon", "olive",
+          "plum", "rust", "sable", "teal", "umber", "violet", "wheat", "zinc", "crimson", "slate"]
+ANIMALS = ["otter", "heron", "lynx", "marmot", "ibis", "kestrel", "badger", "gecko", "puffin", "walrus",
+           "tapir", "ocelot", "newt", "bison", "egret", "lemur", "mole", "pika", "stoat", "viper"]
+FIRST = ["Priya", "Tomas", "Hana", "Luis", "Mira", "Dev", "Ana", "Jonas", "Keiko", "Omar", "Sven", "Lena",
+         "Ravi", "Zoe", "Ivan", "Nia", "Hugo", "Amara", "Felix", "Yuki"]
+LAST = ["Raman", "Ekwueme", "Kobayashi", "Ferreira", "Okafor", "Patel", "Lindqvist", "Moreau", "Haddad", "Novak"]
+
+
+def scenarios_scale(seed: int = 42) -> dict:
+    """200 facts told (120 direct, 40 paraphrase, 20 preference, 20 updates); ~100 questions asked."""
+    r = random.Random(seed)
+    names = [f"{c}-{a}" for c in COLORS for a in ANIMALS]
+    r.shuffle(names)
+    people = [f"{f} {l}" for f in FIRST for l in LAST]
+    r.shuffle(people)
+    port = lambda: str(r.randint(1000, 9899))
+    S = []
+
+    def add(kind, tell, ask, expect, forbid=(), later=None, asked=True):
+        S.append(dict(id=len(S), kind=kind, tell=tell, ask=ask, expect=list(expect), forbid=list(forbid),
+                      later=later, asked=asked))
+
+    D = [
+        "my {n} database listens on port {v}.|What port does my {n} database listen on?|{v}",
+        "my {n} build server sits at 10.{b}.{c}.{d}.|What is the IP address of my {n} build server?|10.{b}.{c}.{d}",
+        "the {n} nightly backup job runs at {h}:{m} AM.|What time does the {n} nightly backup job run?|{h}:{m}",
+        "our {n} service is pinned to API version {a}.{b}.{c}.|Which API version is our {n} service pinned to?|{a}.{b}.{c}",
+        "the ticket prefix for the {n} project is {k}.|What is the ticket prefix for the {n} project?|{k}",
+        "our {n} cold backups go to the bucket {n}-archive-{v}.|Which bucket do the {n} cold backups go to?|{n}-archive-{v}",
+        "my {n} software licence number is {k}.|What is my {n} software licence number?|{k}",
+        "the {n} staging site is served from the hostname {n}.stage.example.net.|What hostname serves the {n} staging site?|{n}.stage.example.net",
+        "our {n} worker pool is capped at {v} concurrent jobs.|How many concurrent jobs is the {n} worker pool capped at?|{v}",
+        "the {n} cache TTL is set to {v} seconds.|How many seconds is the {n} cache TTL?|{v}",
+    ]
+    for i in range(120):
+        t, q, e = D[i % len(D)].split("|")
+        n = names.pop()
+        kw = dict(n=n, v=port(), b=r.randint(2, 200), c=r.randint(2, 200), d=r.randint(2, 250),
+                  h=r.randint(1, 5), m=r.randint(10, 55), a=r.randint(2, 9), k=n[:3].upper() + str(r.randint(10, 99)))
+        add("direct", t.format(**kw), q.format(**kw), [e.format(**kw)], asked=(i % 3 == 0))
+    P = [
+        "the {n} on-call engineer this quarter is {p}.|Who do I page when {n} goes down?|{f}",
+        "{p} owns the {n} payments migration.|Who is responsible for moving {n} payments over?|{f}",
+        "if the {n} build breaks, {p} is the person to ask.|Who should I ask when {n} is red?|{f}",
+        "the {n} release train leaves every {d}.|On what day of the week does {n} ship?|{d}",
+        "all {n} infrastructure lives in the {g} region.|Where, geographically, is the {n} stack hosted?|{g}",
+        "the {n} incident channel is #inc-{n}.|Where should I raise an alarm about {n}?|inc-{n}",
+        "{p} approves every {n} schema change.|Whose sign-off do I need before altering {n} tables?|{f}",
+        "we agreed the {n} retro is held on the {o} Friday of each month.|Which Friday does the {n} team look back on its sprint?|{o}",
+    ]
+    for i in range(40):
+        t, q, e = P[i % len(P)].split("|")
+        n = names.pop(); p_ = people.pop()
+        kw = dict(n=n, p=p_, f=p_.split()[0], d=r.choice(["Monday", "Tuesday", "Wednesday", "Thursday"]),
+                  g=r.choice(["eu-west-3", "ap-south-2", "us-east-2", "sa-east-1"]), o=r.choice(["first", "second", "third", "last"]))
+        add("para", t.format(**kw), q.format(**kw), [e.format(**kw)], asked=(i % 2 == 0))
+    PR = ["for my {n} project I prefer {a} over {b}.|What do I prefer to use on my {n} project instead of {b}?",
+          "on {n} work I always use {a} rather than {b}.|On {n} work, what do I use rather than {b}?"]
+    PAIRS = [("pnpm", "npm"), ("Zig", "Rust"), ("Helix", "vim"), ("fish", "bash"), ("Postgres", "MySQL"), ("Caddy", "nginx"),
+             ("uv", "pip"), ("Bun", "Node"), ("Ruff", "flake8"), ("Podman", "Docker")]
+    for i in range(20):
+        t, q = PR[i % 2].split("|")
+        a_, b_ = PAIRS[i % len(PAIRS)]
+        n = names.pop()
+        add("pref", t.format(n=n, a=a_, b=b_), q.format(n=n, b=b_), [a_], asked=(i % 2 == 0))
+    for i in range(20):
+        n = names.pop(); old, new = port(), port()
+        add("update", f"my {n} queue listens on port {old}.", f"What port does my {n} queue listen on right now?", [new], [old],
+            later=f"update: my {n} queue moved, it now listens on port {new}.")
+    for q in ["What is the name of my dentist?", "What is my mother's maiden name?", "Which airline did I fly to Lisbon?",
+              "What is the serial number of my laptop?", "What is my passport number?", "What is the name of my first pet?",
+              "Which hospital was I born in?", "What is my landlord's phone number?", "What car do I drive?",
+              "What is my gym membership number?"]:
+        add("abstain", None, q, [], [])
+    return {"S": S}
+
+
 def hermes(profile: str, prompt: str, timeout: int = 240) -> tuple[str, float, str]:
     t = time.time()
     try:
@@ -110,7 +188,7 @@ def hermes(profile: str, prompt: str, timeout: int = 240) -> tuple[str, float, s
 
 
 def grade(sc: dict, ans: str) -> bool:
-    ans = ans.replace("\u2019", "'")
+    ans = re.sub(r"(?<=\d),(?=\d{3}\b)", "", ans.replace("\u2019", "'"))  # "4,249" == "4249"
     a = ans.casefold()
     if sc["kind"] == "abstain":
         return bool(REFUSE.search(ans))
@@ -124,21 +202,31 @@ def main() -> int:
     ap.add_argument("--out", default="bench/results")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--scale", action="store_true", help="200-fact run, ~100 questions, batched ingest")
+    ap.add_argument("--batch", type=int, default=5, help="statements per ingest session (scale mode)")
     a = ap.parse_args()
-    S = scenarios(a.seed)["S"]
+    S = scenarios_scale(a.seed)["S"] if a.scale else scenarios(a.seed)["S"]
     if a.limit:
         S = S[: a.limit]
     r = random.Random(a.seed + 1)
     first = [s for s in S if s["tell"]]
     r.shuffle(first)
-    ingest = [(s["id"], f"Remember this for later: {s['tell']} Reply with just 'ok'.") for s in first]
-    ingest += [(s["id"], f"Remember this for later: {s['later']} Reply with just 'ok'.") for s in S if s["later"]]
+    if a.scale:
+        def batches(items):
+            return [items[i:i + a.batch] for i in range(0, len(items), a.batch)]
+        stm = [s["tell"] for s in first]
+        upd = [s["later"] for s in S if s["later"]]
+        ingest = [(0, "Remember these for later, each is a separate fact: " + " ".join(b) + " Reply with just 'ok'.")
+                  for b in batches(stm) + batches(upd)]
+    else:
+        ingest = [(s["id"], f"Remember this for later: {s['tell']} Reply with just 'ok'.") for s in first]
+        ingest += [(s["id"], f"Remember this for later: {s['later']} Reply with just 'ok'.") for s in S if s["later"]]
     ingest_errs = 0
     for i, (sid, prompt) in enumerate(ingest):
         _, secs, err = hermes(a.profile, prompt)
         ingest_errs += bool(err)
         print(f"[{a.arm}] ingest {i + 1}/{len(ingest)} {secs:.0f}s {err}", flush=True)
-    order = S[:]
+    order = [s for s in S if s.get("asked", True)]
     r.shuffle(order)
     rows = []
     for i, s in enumerate(order):
@@ -158,7 +246,7 @@ def main() -> int:
                    ask_p50_s=round(statistics.median(x["secs"] for x in rows), 1),
                    errors=sum(bool(x["error"]) for x in rows) + ingest_errs, seed=a.seed)
     Path(a.out).mkdir(parents=True, exist_ok=True)
-    Path(a.out, f"hermes-live-{a.arm}.json").write_text(json.dumps(dict(summary=summary, rows=rows), indent=1))
+    Path(a.out, f"hermes-live-{'scale-' if a.scale else ''}{a.arm}.json").write_text(json.dumps(dict(summary=summary, rows=rows), indent=1))
     print(json.dumps(summary, indent=1))
     return 0
 
