@@ -12,7 +12,7 @@ from dataclasses import dataclass
 _SENT = re.compile(r"(?<=[.!?])\s+|\n+")
 # Compound sentences: split on ";" and on ", and/but/also" so each clause is one fact.
 _CLAUSE = re.compile(r";\s+|,?\s+(?:and|but|also)\s+(?=(?:I|we|my|our|never|always|don't|do not|the|this)\b)", re.I)
-_LEAD = re.compile(r"^(?:for future reference|note that|remember(?: this(?: for later)?| that)?|fyi|heads up|just so you know)\s*[:,\-]?\s*", re.I)
+_LEAD = re.compile(r"^(?:for future reference|update|correction|note that|remember(?: this(?: for later)?| that)?|fyi|heads up|just so you know)\s*[:,\-]?\s*", re.I)
 
 _RULES: list[tuple[str, float, list[re.Pattern]]] = [
     ("preference", 0.6, [

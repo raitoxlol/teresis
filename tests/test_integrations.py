@@ -27,6 +27,10 @@ class ExtractTests(unittest.TestCase):
         got = extract("Remember this for later: my home wifi network is called EmberNet-53.")
         self.assertEqual([c.content for c in got], ["my home wifi network is called EmberNet-53."])
 
+    def test_strips_update_lead_in(self):
+        got = extract("Update: I prefer spaces now.")
+        self.assertEqual([c.content for c in got], ["I prefer spaces now."])
+
     def test_splits_compound_sentence_and_strips_lead_in(self):
         text = ("For future reference: my deploy rule is that we never ship on Fridays, "
                 "and my staging database is called quokka-staging on port 5433.")
@@ -109,9 +113,15 @@ class HermesProviderTests(unittest.TestCase):
         hits = [m for m in p._store.recall("staging database port", scope=p._read_scopes, k=10,
                                            exclude_kinds=["episode"])]
         self.assertEqual(len(hits), 1)
-        # a changed port is a new fact, not a duplicate
+        # a changed port supersedes the old value in place; history keeps it
         p.sync_turn("my staging database is called quokka-staging on port 6000.", "ok")
         hits = p._store.recall("staging database port", scope=p._read_scopes, k=10, exclude_kinds=["episode"])
+        self.assertEqual(len(hits), 1)
+        self.assertIn("6000", hits[0].content)
+        self.assertNotIn("5433", hits[0].content)
+        # a different service on the same port is a separate fact
+        p.sync_turn("my prod database is called quokka-prod on port 6000.", "ok")
+        hits = p._store.recall("database port", scope=p._read_scopes, k=10, exclude_kinds=["episode"])
         self.assertEqual(len(hits), 2)
         # flipped polarity is kept too
         p.sync_turn("we never ship on Fridays.", "ok")
