@@ -23,6 +23,15 @@ class ExtractTests(unittest.TestCase):
         self.assertIn(("procedure", "Never force-push to main."), got)
         self.assertEqual(len(got), 3)  # questions skipped
 
+    def test_splits_compound_sentence_and_strips_lead_in(self):
+        text = ("For future reference: my deploy rule is that we never ship on Fridays, "
+                "and my staging database is called quokka-staging on port 5433.")
+        got = {(c.kind, c.content) for c in extract(text)}
+        self.assertEqual(got, {
+            ("procedure", "my deploy rule is that we never ship on Fridays"),
+            ("fact", "my staging database is called quokka-staging on port 5433."),
+        })
+
 
 class StoreExtrasTests(unittest.TestCase):
     def setUp(self):

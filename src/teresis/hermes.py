@@ -179,7 +179,9 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             blocks = [self._format(facts, "Long-term memory (teresis)")] if facts else []
             if _truthy(self._config.get("capture_turns", True)):
                 eps = self._store.recall(query, scope=[self._scope], inherit=False, kinds=["episode"], k=2)
-                eps = [m for m in eps if (m.score or 0) >= 0.3]
+                known = [" ".join(m.content.casefold().split()) for m in facts]
+                eps = [m for m in eps if (m.score or 0) >= 0.3
+                       and not any(k and k.removeprefix("user: ") in " ".join(m.content.casefold().split()) for k in known)]
                 if eps:
                     blocks.append(self._format(eps, "Related past conversation"))
                 facts += eps
