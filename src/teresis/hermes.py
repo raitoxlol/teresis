@@ -200,12 +200,15 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
     _POLARITY = {"never", "always", "not", "no", "dont", "don't", "stop", "avoid", "without"}
 
     def _near_dup(self, content: str):
-        """Existing non-episode memory that says the same thing in different words, else None.
+        """Compare against existing non-episode memories about the same subject.
 
-        Numbers and polarity words must match exactly, so a changed port or "never" -> "always"
-        is a new fact, not a duplicate.
+        Returns ("dup", m) when an existing memory says the same thing in different words,
+        ("supersede", m) when it is the same statement with a different number (a changed port or
+        version: the old value is revised, history kept), else None. Opposite polarity
+        ("never" vs "always") is always a new fact.
         """
-        mine = term_set(content.replace("-", ""))
+        strip = lambda t: t.replace("-", "").removeprefix("User: ")
+        mine = term_set(strip(content))
         if len(mine) < 3:
             return None
         try:
@@ -213,14 +216,31 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         except Exception:
             return None
         for m in cands:
-            theirs = term_set(m.content.replace("-", ""))
-            if containment(mine, theirs) < 0.7:
+            theirs = term_set(strip(m.content))
+            words = lambda ts: {t for t in ts if not any(ch.isdigit() for ch in t)}
+            if containment(words(mine), words(theirs)) < 0.8:
                 continue
             diff = mine ^ theirs
-            if any(t in self._POLARITY or any(ch.isdigit() for ch in t) for t in diff):
+            if any(t in self._POLARITY for t in diff):
                 continue
-            return m
+            num_mine = {t for t in mine if any(ch.isdigit() for ch in t)}
+            num_theirs = {t for t in theirs if any(ch.isdigit() for ch in t)}
+            if num_mine == num_theirs:
+                return ("dup", m)
+            if num_mine and num_theirs:
+                return ("supersede", m)
         return None
+
+    def _write_or_skip(self, content: str, **kw) -> bool:
+        """remember() unless it duplicates an existing memory; revise in place if it supersedes one."""
+        hit = self._near_dup(content)
+        if hit and hit[0] == "dup":
+            return False
+        if hit:
+            self._store.update(hit[1].id, content)
+            return True
+        self._store.remember(content, **kw)
+        return True
 
     # -- writes ------------------------------------------------------------
     def _save_extracted(self, text: str, source: str) -> List[str]:
@@ -229,11 +249,9 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             scope = "user" if c.kind == "preference" else self._scope
             content = c.content if not c.content.lower().startswith(("i ", "i'm", "my ")) else f"User: {c.content}"
             try:
-                if self._near_dup(content):
-                    continue
-                self._store.remember(content, scope=scope, kind=c.kind, importance=c.importance,
-                                     source=source, meta={"session_id": self._session_id})
-                saved.append(content)
+                if self._write_or_skip(content, scope=scope, kind=c.kind, importance=c.importance,
+                                       source=source, meta={"session_id": self._session_id}):
+                    saved.append(content)
             except Exception as exc:
                 log.debug("teresis extract save failed: %s", exc)
         return saved
@@ -268,9 +286,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         prev = (metadata or {}).get("previous_content")
         try:
             if action == "add" and content:
-                if self._near_dup(content):
-                    return
-                self._store.remember(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool")
+                self._write_or_skip(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool")
             elif action == "replace" and content:
                 old = self._store.find(prev, scope=scope) if prev else None
                 if old:
