@@ -151,8 +151,9 @@ instructions in `initialize`.
 ### HTTP (anything else)
 
 ```bash
-MNEMO_HTTP_TOKEN=change-me python3 -m mnemo http --port 7077 --scope global
-curl -s localhost:7077/tools/memory_recall -H 'Authorization: Bearer change-me' -d '{"query":"deploy"}'
+export MNEMO_HTTP_TOKEN="$(openssl rand -hex 16)"
+python3 -m mnemo http --port 7077 --scope global &
+curl -s localhost:7077/tools/memory_recall -H "Authorization: Bearer $MNEMO_HTTP_TOKEN" -d '{"query":"deploy"}'
 ```
 
 It uses the same tool names and arguments as MCP. It binds to 127.0.0.1 by default.
