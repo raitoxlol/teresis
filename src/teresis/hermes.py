@@ -130,6 +130,10 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._write_enabled = kwargs.get("agent_context", "primary") not in _NO_WRITE_CONTEXTS
         self._session_id = session_id
         self._platform = kwargs.get("platform", "")
+        # Hermes does not forward arbitrary env vars to providers, so embedder settings live in config.
+        for key, var in (("embed", "TERESIS_EMBED"), ("embed_model", "TERESIS_EMBED_MODEL"), ("embed_url", "TERESIS_EMBED_URL")):
+            if str(self._config.get(key) or "").strip():
+                os.environ[var] = str(self._config[key]).strip()
         self._store = MemoryStore(self._db_path(hermes_home))
         self._server = Server(self._store, default_scope=self._read_scopes)
 
@@ -346,6 +350,10 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
              "(same store your MCP agents use). Use $HERMES_HOME/teresis.db to isolate per profile.", "default": ""},
             {"key": "scope", "description": "Write scope. Empty = hermes/<profile>.", "default": ""},
             {"key": "extra_scopes", "description": "Comma-separated scopes also searched on recall.", "default": "user"},
+            {"key": "embed", "description": "Embedder backend: ollama or openai. Empty = lexical only (or TERESIS_EMBED env).",
+             "default": ""},
+            {"key": "embed_model", "description": "Embedding model name, e.g. all-minilm.", "default": ""},
+            {"key": "embed_url", "description": "Embedder base URL. Empty = http://localhost:11434 for ollama.", "default": ""},
             {"key": "capture_turns", "description": "Store each turn as a short-lived episode.", "type": "boolean",
              "default": True},
             {"key": "auto_extract", "description": "Save stated preferences/decisions automatically.",

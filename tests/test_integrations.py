@@ -129,6 +129,15 @@ class HermesProviderTests(unittest.TestCase):
         hits = p._store.recall("ship on Fridays", scope=p._read_scopes, k=10, exclude_kinds=["episode"])
         self.assertEqual(len(hits), 2)
 
+    def test_embedder_settings_come_from_config(self):
+        import os
+        for v in ("TERESIS_EMBED", "TERESIS_EMBED_MODEL"):
+            os.environ.pop(v, None)
+        self.addCleanup(lambda: [os.environ.pop(v, None) for v in ("TERESIS_EMBED", "TERESIS_EMBED_MODEL", "TERESIS_EMBED_URL")])
+        p = TeresisMemoryProvider(config={"db_path": self.db, "embed": "ollama", "embed_model": "all-minilm"})
+        p.initialize("s", hermes_home=self.d.name, platform="cli", agent_identity="max")
+        self.assertIsNotNone(p._store.embedder)
+
     def test_full_lifecycle(self):
         p = self.provider()
         self.assertIn("hermes/max", p.system_prompt_block())

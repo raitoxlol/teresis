@@ -213,6 +213,7 @@ Config goes under `plugins.teresis` in `config.yaml`:
 | `db_path` | `""` | Empty means the shared `~/.local/share/teresis/memory.db`, the same file your MCP agents use. Set `$HERMES_HOME/teresis.db` to isolate a profile. |
 | `scope` | `hermes/<profile>` | Write scope |
 | `extra_scopes` | `user` | Also searched on recall (comma-separated) |
+| `embed` / `embed_model` / `embed_url` | `""` | Embedder for this provider, e.g. `ollama` / `all-minilm`. Hermes does not forward `TERESIS_EMBED*` env vars, so set them here. |
 | `capture_turns` | `true` | Save turns as episodes |
 | `episode_ttl_days` | `30` | `0` keeps them forever |
 | `auto_extract` | `true` | Rule-based; precision over recall |
