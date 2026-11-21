@@ -1,0 +1,427 @@
+{
+ "summary": {
+  "benchmark": "hermes-live",
+  "arm": "teresis",
+  "profile": "bench-teresis",
+  "n": 30,
+  "acc": 0.967,
+  "by_kind": {
+   "abstain": {
+    "n": 4,
+    "acc": 1.0
+   },
+   "direct": {
+    "n": 10,
+    "acc": 1.0
+   },
+   "para": {
+    "n": 6,
+    "acc": 0.833
+   },
+   "pref": {
+    "n": 6,
+    "acc": 1.0
+   },
+   "update": {
+    "n": 4,
+    "acc": 1.0
+   }
+  },
+  "ask_p50_s": 9.3,
+  "errors": 0,
+  "seed": 42,
+  "regraded": "curly-apostrophe refusal fix applied to stored answers"
+ },
+ "rows": [
+  {
+   "id": 10,
+   "kind": "pref",
+   "ask": "Which package manager should you use when setting up my JS project?",
+   "expect": [
+    "pnpm"
+   ],
+   "forbid": [],
+   "answer": "pnpm, your preferred package manager for JavaScript projects.",
+   "ok": true,
+   "secs": 12.5,
+   "error": ""
+  },
+  {
+   "id": 7,
+   "kind": "direct",
+   "ask": "What is my otter software licence number?",
+   "expect": [
+    "OT-23396"
+   ],
+   "forbid": [],
+   "answer": "Your otter software licence number is OT-23396.",
+   "ok": true,
+   "secs": 8.1,
+   "error": ""
+  },
+  {
+   "id": 3,
+   "kind": "direct",
+   "ask": "Which API version is our saffron service pinned to?",
+   "expect": [
+    "8.20.4"
+   ],
+   "forbid": [],
+   "answer": "Our saffron service is pinned to API version 8.20.4.",
+   "ok": true,
+   "secs": 8.2,
+   "error": ""
+  },
+  {
+   "id": 22,
+   "kind": "update",
+   "ask": "What port does my ibis cache listen on right now?",
+   "expect": [
+    "4817"
+   ],
+   "forbid": [
+    "8942"
+   ],
+   "answer": "Your ibis cache listens on port 4817.",
+   "ok": true,
+   "secs": 6.7,
+   "error": ""
+  },
+  {
+   "id": 11,
+   "kind": "pref",
+   "ask": "Should the Go code you write for me use tabs or spaces?",
+   "expect": [
+    "tab"
+   ],
+   "forbid": [],
+   "answer": "Tabs, your preference for all Go code.",
+   "ok": true,
+   "secs": 8.3,
+   "error": ""
+  },
+  {
+   "id": 6,
+   "kind": "direct",
+   "ask": "What is my home wifi network called?",
+   "expect": [
+    "EmberNet-53"
+   ],
+   "forbid": [],
+   "answer": "Your home Wi-Fi network is called EmberNet-53.",
+   "ok": true,
+   "secs": 7.7,
+   "error": ""
+  },
+  {
+   "id": 20,
+   "kind": "para",
+   "ask": "Where, geographically, is the sparrow stack hosted?",
+   "expect": [
+    "ap-south-2"
+   ],
+   "forbid": [],
+   "answer": "The sparrow stack is hosted in AWS\u2019s Hyderabad, India region (ap-south-2).",
+   "ok": true,
+   "secs": 9.7,
+   "error": ""
+  },
+  {
+   "id": 27,
+   "kind": "abstain",
+   "ask": "What is my mother's maiden name?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don\u2019t know your mother\u2019s maiden name.",
+   "ok": true,
+   "secs": 11.7,
+   "error": ""
+  },
+  {
+   "id": 14,
+   "kind": "pref",
+   "ask": "What should you always do before committing for me?",
+   "expect": [
+    "lint"
+   ],
+   "forbid": [],
+   "answer": "Run the linter before committing anything.",
+   "ok": true,
+   "secs": 27.1,
+   "error": ""
+  },
+  {
+   "id": 25,
+   "kind": "update",
+   "ask": "What port does my garnet cache listen on right now?",
+   "expect": [
+    "5763"
+   ],
+   "forbid": [
+    "7977"
+   ],
+   "answer": "Your garnet cache listens on port 5763.",
+   "ok": true,
+   "secs": 10.3,
+   "error": ""
+  },
+  {
+   "id": 17,
+   "kind": "para",
+   "ask": "Which network port should I open to reach the tundra dashboard?",
+   "expect": [
+    "5112"
+   ],
+   "forbid": [],
+   "answer": "Open port 5112 to reach the tundra dashboard.",
+   "ok": true,
+   "secs": 7.1,
+   "error": ""
+  },
+  {
+   "id": 13,
+   "kind": "pref",
+   "ask": "Which shell do I use by default?",
+   "expect": [
+    "fish"
+   ],
+   "forbid": [],
+   "answer": "Your default shell is fish.",
+   "ok": true,
+   "secs": 8.4,
+   "error": ""
+  },
+  {
+   "id": 21,
+   "kind": "para",
+   "ask": "Who should I ask when the build is red?",
+   "expect": [
+    "Luis"
+   ],
+   "forbid": [],
+   "answer": "Ask Luis Ferreira.",
+   "ok": true,
+   "secs": 9.6,
+   "error": ""
+  },
+  {
+   "id": 0,
+   "kind": "direct",
+   "ask": "What port does my basalt-staging database listen on?",
+   "expect": [
+    "6827"
+   ],
+   "forbid": [],
+   "answer": "Your basalt-staging database listens on port 6827.",
+   "ok": true,
+   "secs": 7.8,
+   "error": ""
+  },
+  {
+   "id": 9,
+   "kind": "direct",
+   "ask": "What bike do I ride?",
+   "expect": [
+    "Fennel Gravel"
+   ],
+   "forbid": [],
+   "answer": "You ride a Fennel Gravel bike.",
+   "ok": true,
+   "secs": 7.3,
+   "error": ""
+  },
+  {
+   "id": 1,
+   "kind": "direct",
+   "ask": "What is the IP address of my falcon-7 build server?",
+   "expect": [
+    "10.73.3.196"
+   ],
+   "forbid": [],
+   "answer": "Your falcon-7 build server\u2019s IP address is 10.73.3.196.",
+   "ok": true,
+   "secs": 8.7,
+   "error": ""
+  },
+  {
+   "id": 2,
+   "kind": "direct",
+   "ask": "What time does the nightly heron backup job run?",
+   "expect": [
+    "2:54"
+   ],
+   "forbid": [],
+   "answer": "The nightly heron backup job runs at 2:54 AM.",
+   "ok": true,
+   "secs": 7.7,
+   "error": ""
+  },
+  {
+   "id": 23,
+   "kind": "update",
+   "ask": "What port does my quartz cache listen on right now?",
+   "expect": [
+    "4166"
+   ],
+   "forbid": [
+    "6945"
+   ],
+   "answer": "I remember your quartz cache as listening on port 4166, though I can\u2019t confirm its current state without checking.",
+   "ok": true,
+   "secs": 10.4,
+   "error": ""
+  },
+  {
+   "id": 29,
+   "kind": "abstain",
+   "ask": "What is the serial number of my laptop?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don\u2019t know your laptop\u2019s serial number.",
+   "ok": true,
+   "secs": 10.3,
+   "error": ""
+  },
+  {
+   "id": 18,
+   "kind": "para",
+   "ask": "Who is responsible for moving the payments system over?",
+   "expect": [
+    "Tomas"
+   ],
+   "forbid": [],
+   "answer": "Tomas Ekwueme owns the payments migration.",
+   "ok": true,
+   "secs": 9.5,
+   "error": ""
+  },
+  {
+   "id": 8,
+   "kind": "direct",
+   "ask": "What is my cat's name?",
+   "expect": [
+    "Lynx"
+   ],
+   "forbid": [],
+   "answer": "Your cat\u2019s name is Lynx.",
+   "ok": true,
+   "secs": 12.2,
+   "error": ""
+  },
+  {
+   "id": 28,
+   "kind": "abstain",
+   "ask": "Which airline did I fly on my last trip to Lisbon?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don\u2019t know which airline you flew to Lisbon.",
+   "ok": true,
+   "secs": 11.6,
+   "error": ""
+  },
+  {
+   "id": 19,
+   "kind": "para",
+   "ask": "On what day of the week does kestrel ship?",
+   "expect": [
+    "Thursday"
+   ],
+   "forbid": [],
+   "answer": "Kestrel ships every Thursday.",
+   "ok": true,
+   "secs": 9.8,
+   "error": ""
+  },
+  {
+   "id": 12,
+   "kind": "pref",
+   "ask": "Which language should you pick for a new small CLI tool of mine?",
+   "expect": [
+    "zig"
+   ],
+   "forbid": [],
+   "answer": "Zig, since you prefer it over Rust for small CLI tools.",
+   "ok": true,
+   "secs": 10.9,
+   "error": ""
+  },
+  {
+   "id": 24,
+   "kind": "update",
+   "ask": "What port does my marmot cache listen on right now?",
+   "expect": [
+    "2355"
+   ],
+   "forbid": [
+    "8611"
+   ],
+   "answer": "I remember your marmot cache listening on port 2355, though I can\u2019t confirm its current state without checking.",
+   "ok": true,
+   "secs": 9.2,
+   "error": ""
+  },
+  {
+   "id": 4,
+   "kind": "direct",
+   "ask": "What is the ticket prefix for the onyx project?",
+   "expect": [
+    "ONY29"
+   ],
+   "forbid": [],
+   "answer": "The onyx ticket prefix is ONY29.",
+   "ok": true,
+   "secs": 10.5,
+   "error": ""
+  },
+  {
+   "id": 15,
+   "kind": "pref",
+   "ask": "What is my favourite editor?",
+   "expect": [
+    "helix"
+   ],
+   "forbid": [],
+   "answer": "Your favourite editor is Helix.",
+   "ok": true,
+   "secs": 8.9,
+   "error": ""
+  },
+  {
+   "id": 26,
+   "kind": "abstain",
+   "ask": "What is the name of my dentist?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don\u2019t know your dentist\u2019s name.",
+   "ok": true,
+   "secs": 9.2,
+   "error": ""
+  },
+  {
+   "id": 16,
+   "kind": "para",
+   "ask": "Who do I page if production goes down?",
+   "expect": [
+    "Mira"
+   ],
+   "forbid": [],
+   "answer": "I don\u2019t know who you page if production goes down.",
+   "ok": false,
+   "secs": 11.0,
+   "error": ""
+  },
+  {
+   "id": 5,
+   "kind": "direct",
+   "ask": "Which bucket do our cold backups go to?",
+   "expect": [
+    "juniper-archive-320"
+   ],
+   "forbid": [],
+   "answer": "Our cold backups go to the juniper-archive-320 bucket.",
+   "ok": true,
+   "secs": 8.7,
+   "error": ""
+  }
+ ]
+}

@@ -23,6 +23,10 @@ class ExtractTests(unittest.TestCase):
         self.assertIn(("procedure", "Never force-push to main."), got)
         self.assertEqual(len(got), 3)  # questions skipped
 
+    def test_strips_remember_this_for_later_lead_in(self):
+        got = extract("Remember this for later: my home wifi network is called EmberNet-53.")
+        self.assertEqual([c.content for c in got], ["my home wifi network is called EmberNet-53."])
+
     def test_splits_compound_sentence_and_strips_lead_in(self):
         text = ("For future reference: my deploy rule is that we never ship on Fridays, "
                 "and my staging database is called quokka-staging on port 5433.")
@@ -96,6 +100,24 @@ class HermesProviderTests(unittest.TestCase):
         self.assertTrue(p.is_available())
         p.initialize("sess-1", hermes_home=self.d.name, platform="cli", agent_identity="max", **init)
         return p
+
+    def test_near_duplicate_writes_are_skipped_but_changes_are_kept(self):
+        p = self.provider()
+        p.on_memory_write("add", "memory", "Wright's staging database is named quokka-staging and uses port 5433.")
+        # extractor path, different wording, same fact -> skipped
+        p.sync_turn("my staging database is called quokka-staging on port 5433.", "ok")
+        hits = [m for m in p._store.recall("staging database port", scope=p._read_scopes, k=10,
+                                           exclude_kinds=["episode"])]
+        self.assertEqual(len(hits), 1)
+        # a changed port is a new fact, not a duplicate
+        p.sync_turn("my staging database is called quokka-staging on port 6000.", "ok")
+        hits = p._store.recall("staging database port", scope=p._read_scopes, k=10, exclude_kinds=["episode"])
+        self.assertEqual(len(hits), 2)
+        # flipped polarity is kept too
+        p.sync_turn("we never ship on Fridays.", "ok")
+        p.sync_turn("we always ship on Fridays.", "ok")
+        hits = p._store.recall("ship on Fridays", scope=p._read_scopes, k=10, exclude_kinds=["episode"])
+        self.assertEqual(len(hits), 2)
 
     def test_full_lifecycle(self):
         p = self.provider()

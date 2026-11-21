@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from . import extract as _extract
 from .mcp import TOOLS, Server
 from .store import MemoryStore, default_db_path
+from .text import containment, term_set
 
 log = logging.getLogger("teresis.hermes")
 
@@ -196,6 +197,31 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             return None
         return _RecallStatus(provider_label="teresis", count=self._last_count)
 
+    _POLARITY = {"never", "always", "not", "no", "dont", "don't", "stop", "avoid", "without"}
+
+    def _near_dup(self, content: str):
+        """Existing non-episode memory that says the same thing in different words, else None.
+
+        Numbers and polarity words must match exactly, so a changed port or "never" -> "always"
+        is a new fact, not a duplicate.
+        """
+        mine = term_set(content.replace("-", ""))
+        if len(mine) < 3:
+            return None
+        try:
+            cands = self._store.recall(content, scope=self._read_scopes, k=5, exclude_kinds=["episode"])
+        except Exception:
+            return None
+        for m in cands:
+            theirs = term_set(m.content.replace("-", ""))
+            if containment(mine, theirs) < 0.7:
+                continue
+            diff = mine ^ theirs
+            if any(t in self._POLARITY or any(ch.isdigit() for ch in t) for t in diff):
+                continue
+            return m
+        return None
+
     # -- writes ------------------------------------------------------------
     def _save_extracted(self, text: str, source: str) -> List[str]:
         saved = []
@@ -203,6 +229,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             scope = "user" if c.kind == "preference" else self._scope
             content = c.content if not c.content.lower().startswith(("i ", "i'm", "my ")) else f"User: {c.content}"
             try:
+                if self._near_dup(content):
+                    continue
                 self._store.remember(content, scope=scope, kind=c.kind, importance=c.importance,
                                      source=source, meta={"session_id": self._session_id})
                 saved.append(content)
@@ -240,6 +268,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         prev = (metadata or {}).get("previous_content")
         try:
             if action == "add" and content:
+                if self._near_dup(content):
+                    return
                 self._store.remember(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool")
             elif action == "replace" and content:
                 old = self._store.find(prev, scope=scope) if prev else None
