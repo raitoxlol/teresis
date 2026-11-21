@@ -108,6 +108,44 @@ Reproduce: `pip install mem0ai ollama numpy` in a venv, run `ollama pull all-min
 `python bench/compare.py --data longmemeval_s_cleaned.json --system <naive|teresis|teresis-emb|holographic|mem0> --limit 100`
 and `python bench/report.py bench/results`.
 
+## Head-to-head: LoCoMo
+
+`bench/locomo.py` runs LoCoMo (Maharana et al., ACL 2024): 10 long multi-session conversations,
+ingested one turn at a time, scored on whether the retrieved turns contain the exact evidence
+`dia_id`s. It covers 1,536 QA pairs across multi-hop, temporal, open-domain and single-hop
+categories. The adversarial category is excluded because it has no evidence to retrieve. The
+retrieval weights are the same ones from the LongMemEval dev split. Nothing was re-tuned on LoCoMo.
+Everything ran on nucbox (CPU only).
+
+| System | recall_any@5 | recall_any@10 | recall_all@10 | NDCG@10 | ingest turns/s | query p50 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **teresis + all-minilm** | **0.654** | **0.727** | **0.588** | **0.516** | 63 | 22 ms |
+| teresis (no model) | 0.637 | 0.712 | 0.585 | 0.512 | 422 | 8.4 ms |
+| holographic (Hermes plugin) | 0.563 | 0.638 | 0.530 | 0.449 | 41 | 10 ms |
+| mem0 OSS (infer=False, all-minilm) | 0.449 | 0.566 | 0.440 | 0.342 | 71 | 126 ms |
+| naive LIKE, newest first | 0.025 | 0.049 | 0.038 | 0.021 | — | 0.8 ms |
+
+recall_any@5 by category:
+
+| System | multi-hop (282) | temporal (321) | open-domain (92) | single-hop (841) |
+| --- | --- | --- | --- | --- |
+| teresis + all-minilm | 0.603 | 0.707 | 0.359 | 0.684 |
+| teresis (no model) | 0.539 | 0.685 | 0.380 | 0.680 |
+| holographic | 0.372 | 0.635 | 0.337 | 0.623 |
+| mem0 | 0.401 | 0.517 | 0.239 | 0.463 |
+
+How to read it:
+- Turns are short and full of names and dates, which is where exact-term matching earns its keep.
+  Teresis with no model at all beats mem0 with embeddings by 18.8 points of recall_any@5. With the
+  same embedding model it leads by 20.5 points and queries 5.6 times faster.
+- The embedding model mainly helps multi-hop (`0.539 → 0.603`). It does not help open-domain, where
+  the no-model run is slightly ahead (`0.380` vs `0.359`, 92 questions, so within noise).
+- This is retrieval only. It does not test answer generation or abstention. mem0 ran without its
+  optional BM25 and spaCy extras and with infer=False (no LLM), the same as in the LongMemEval run.
+
+Reproduce: download `locomo10.json` from the LoCoMo repo to `.data/`, then
+`python bench/locomo.py --data .data/locomo10.json --system <naive|teresis|teresis-emb|holographic|mem0>`.
+
 ## Built-in benchmark
 
 `teresis bench` runs 35 queries over 34 target memories hidden among 2,000 distractors. The queries
