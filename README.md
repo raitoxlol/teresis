@@ -58,7 +58,49 @@ Deliberately not borrowed: LLM-based extraction on every turn (mem0, honcho). It
 turn, is non-deterministic, and needs a network or a large local model. mnemo stays deterministic. The
 agent saves what matters through tools, and rules catch explicit preferences and decisions.
 
-## Benchmark
+## Head-to-head: LongMemEval
+
+`bench/compare.py` runs the public LongMemEval_s benchmark (Wu et al., ICLR 2025) against other
+providers. Each question comes with a ~50-session chat history. Every system ingests the same units
+(one user/assistant round, at most 2,000 characters) and gets the question as its query. Scoring is
+at the session level, as in the paper. The 30 abstention questions have no evidence, so they are
+skipped. Everything ran on nucbox: 8-core CPU, no GPU, Ollama on CPU.
+
+Same 100 questions (stratified by type, seed 13):
+
+| System | recall_any@5 | recall_all@10 | NDCG@10 | ingest rounds/s | query p50 |
+| --- | --- | --- | --- | --- | --- |
+| mem0 OSS 2.2.1 (vector only, all-minilm) | **0.98** | **0.96** | 0.903 | 8.3* | 366 ms |
+| mnemo + all-minilm | **0.98** | 0.91 | **0.930** | 5.7* | 152 ms |
+| mnemo (no model) | 0.97 | 0.89 | 0.882 | 43 | 25 ms |
+| holographic (Hermes plugin) | 0.94 | 0.85 | 0.859 | 7.2 | 23 ms |
+| naive LIKE, newest first | 0.35 | 0.18 | 0.195 | — | 6 ms |
+
+All 470 non-abstention questions, mnemo with no model: recall_any@5 0.968, recall_all@10 0.913,
+NDCG@10 0.895. The weakest type was single-session-preference at 0.73, where questions are indirect
+("can you recommend…").
+
+How to read it:
+- At recall_any@5, LongMemEval_s is close to saturated for any relevance-ranked system. The
+  distractor sessions are mostly unrelated chat. The stricter metrics are where systems differ.
+- With no model at all, mnemo is within 0.01 recall_any@5 of mem0 with embeddings. It queries 15
+  times faster and ingests 5 times faster.
+- With the same embedding model, mem0's pure vector search finds all evidence sessions more often
+  (recall_all@10 0.96 vs 0.91). mnemo ranks the evidence higher (NDCG 0.930 vs 0.903).
+- Leak check: the evidence sessions' mean position in time is 0.54 (0 is oldest, 1 is newest), and
+  mnemo scores the same with its recency and importance priors turned off.
+- \* Ingest speeds for the embedding systems were measured while they shared one CPU Ollama
+  process, so treat them as rough. mem0 was given batch-precomputed embeddings through a cache on its
+  own embedder. Without that it ingested 1.6 rounds/s. mem0 ran without its optional BM25 and spaCy
+  extras, with telemetry disabled and infer=False (no LLM).
+- Not compared: supermemory, honcho, retaindb, byterover, openviking and hindsight. They are cloud
+  services that need accounts and would send data off the machine.
+
+Reproduce: `pip install mem0ai ollama numpy` in a venv, run `ollama pull all-minilm`, then
+`python bench/compare.py --data longmemeval_s_cleaned.json --system <naive|mnemo|mnemo-emb|holographic|mem0> --limit 100`
+and `python bench/report.py`.
+
+## Built-in benchmark
 
 `mnemo bench` runs 35 queries over 34 target memories hidden among 2,000 distractors. The queries
 cover supersession, scope isolation, inheritance, typos, morphology, recency, expiry and paraphrase.

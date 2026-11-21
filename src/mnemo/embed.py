@@ -28,7 +28,8 @@ class Embedder(Protocol):
     def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
 
 
-def _post(url: str, payload: dict, headers: dict | None = None, timeout: float = 30.0) -> dict:
+def _post(url: str, payload: dict, headers: dict | None = None, timeout: float | None = None) -> dict:
+    timeout = timeout or float(os.environ.get("MNEMO_EMBED_TIMEOUT", "120"))
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode(),
