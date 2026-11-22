@@ -367,6 +367,39 @@ class HttpTests(unittest.TestCase):
             httpd.server_close()
             store.close()
 
+    def test_hermes_import_memories(self):
+        from teresis.hermes import import_memories
+
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d) / "profiles" / "max"
+            (home / "memories").mkdir(parents=True)
+            dbp = home / "teresis.db"
+            (home / "config.yaml").write_text(
+                f"plugins:\n  teresis:\n    db_path: {dbp}\n    scope: hermes/max\n"
+            )
+            (home / "memories" / "MEMORY.md").write_text(
+                "Vault is canonical source.\n§\nDeploy uses sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456.\n"
+            )
+            (home / "memories" / "USER.md").write_text(
+                "Prefers Neovim.\n§\nAvoids Drake; likes Kanye.\n"
+            )
+            dry = import_memories(home, dry_run=True)
+            self.assertEqual((dry["memory_entries"], dry["user_entries"], dry["created"]), (2, 2, 0))
+            self.assertFalse(dbp.exists())
+
+            first = import_memories(home)
+            self.assertEqual((first["created"], first["duplicates"], first["redacted"]), (4, 0, 1))
+            self.assertEqual(first["scope"], "hermes/max")
+
+            second = import_memories(home)
+            self.assertEqual((second["created"], second["duplicates"]), (0, 4))
+
+            with MemoryStore(dbp, embedder=None, reranker=None) as s:
+                hits = s.recall("Neovim", scope=["hermes/max", "user"])
+                self.assertTrue(any("Neovim" in h.content for h in hits))
+                all_text = " ".join(m["content"] for m in s.export())
+                self.assertNotIn("sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456", all_text)
+
 
 if __name__ == "__main__":
     unittest.main()

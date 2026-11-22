@@ -435,3 +435,113 @@ def install(hermes_home: str | os.PathLike, *, link: bool = False) -> Path:
     (dest / "__init__.py").write_text(_PLUGIN_INIT)
     (dest / "plugin.yaml").write_text(_PLUGIN_YAML.format(version=__version__))
     return dest
+
+
+def _read_teresis_yaml_config(hermes_home: Path) -> Dict[str, str]:
+    """Read plugins.teresis scalar fields (db_path, scope) from config.yaml with zero deps."""
+    cfg_path = hermes_home / "config.yaml"
+    if not cfg_path.is_file():
+        return {}
+    lines = cfg_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    out: Dict[str, str] = {}
+    in_plugins = False
+    in_teresis = False
+    teresis_indent = -1
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            in_plugins = stripped == "plugins:"
+            in_teresis = False
+            continue
+        if in_plugins and not in_teresis and stripped == f"{PLUGIN_KEY}:":
+            in_teresis = True
+            teresis_indent = indent
+            continue
+        if in_teresis:
+            if indent <= teresis_indent:
+                in_teresis = False
+                continue
+            if ":" in stripped:
+                k, v = stripped.split(":", 1)
+                val = v.strip().strip("'\"")
+                if val:
+                    out[k.strip()] = val
+    return out
+
+
+def parse_hermes_memory_file(text: str) -> List[str]:
+    """Split a Hermes MEMORY.md / USER.md file on its '§' entry separator (or paragraphs)."""
+    import re
+
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    if re.search(r"(?:^|\n)\s*§\s*(?:\n|$)", raw):
+        parts = re.split(r"(?:^|\n)\s*§\s*(?:\n|$)", raw)
+    else:
+        parts = re.split(r"\n\s*\n+", raw)
+    out: List[str] = []
+    for p in parts:
+        cleaned = " ".join(line.strip() for line in p.strip().splitlines() if line.strip())
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
+def import_memories(
+    hermes_home: str | os.PathLike,
+    *,
+    db_path: str | os.PathLike | None = None,
+    scope: str | None = None,
+    user_scope: str = "user",
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """Import Hermes built-in MEMORY.md and USER.md entries into a Teresis store (non-destructive, idempotent)."""
+    home = Path(hermes_home).expanduser()
+    cfg = _read_teresis_yaml_config(home)
+    target_db = Path(db_path or cfg.get("db_path") or default_db_path()).expanduser()
+    default_scope = f"hermes/{home.name}" if home.parent.name == "profiles" else "hermes/default"
+    target_scope = (scope or cfg.get("scope") or default_scope).strip()
+
+    mem_dir = home / "memories"
+    mem_entries = parse_hermes_memory_file((mem_dir / "MEMORY.md").read_text(encoding="utf-8", errors="replace")) if (mem_dir / "MEMORY.md").is_file() else []
+    user_entries = parse_hermes_memory_file((mem_dir / "USER.md").read_text(encoding="utf-8", errors="replace")) if (mem_dir / "USER.md").is_file() else []
+
+    stats: Dict[str, Any] = {
+        "hermes_home": str(home),
+        "db_path": str(target_db),
+        "scope": target_scope,
+        "user_scope": user_scope,
+        "memory_entries": len(mem_entries),
+        "user_entries": len(user_entries),
+        "created": 0,
+        "duplicates": 0,
+        "redacted": 0,
+        "dry_run": dry_run,
+    }
+    if dry_run or not (mem_entries or user_entries):
+        return stats
+
+    with MemoryStore(target_db, embedder=None, reranker=None) as store:
+        for entry in mem_entries:
+            res = store.remember(entry, scope=target_scope, kind="fact", importance=0.7,
+                                 source="hermes:import:MEMORY.md")
+            if res.status == "created":
+                stats["created"] += 1
+            else:
+                stats["duplicates"] += 1
+            if res.redacted:
+                stats["redacted"] += 1
+        for entry in user_entries:
+            res = store.remember(entry, scope=user_scope, kind="preference", importance=0.7,
+                                 source="hermes:import:USER.md")
+            if res.status == "created":
+                stats["created"] += 1
+            else:
+                stats["duplicates"] += 1
+            if res.redacted:
+                stats["redacted"] += 1
+    return stats

@@ -97,6 +97,11 @@ def build_parser() -> argparse.ArgumentParser:
     hi = hm_sub.add_parser("install", help="install the teresis memory provider plugin into a Hermes home")
     hi.add_argument("--home", default=None, help="Hermes home (default $HERMES_HOME or ~/.hermes)")
     hi.add_argument("--link", action="store_true", help="symlink this checkout instead of copying (dev)")
+    him = hm_sub.add_parser("import", help="import built-in Hermes MEMORY.md and USER.md into teresis")
+    him.add_argument("--home", default=None, help="Hermes home or profile dir (default $HERMES_HOME or ~/.hermes)")
+    him.add_argument("--scope", default=None, help="target scope for MEMORY.md (default from config.yaml)")
+    him.add_argument("--user-scope", default="user", help="target scope for USER.md (default: user)")
+    him.add_argument("--dry-run", action="store_true", help="count entries without writing")
 
     b = sub.add_parser("bench", help="run the retrieval benchmark")
     b.add_argument("--scale", type=int, default=10000, help="distractor memories for the latency test")
@@ -113,11 +118,22 @@ def main(argv: list[str] | None = None) -> int:
         import os
         from pathlib import Path
 
-        from .hermes import install
+        from .hermes import import_memories, install
 
         home = args.home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
-        dest = install(home, link=args.link)
-        print(f"installed teresis provider at {dest}\nactivate: hermes config set memory.provider teresis")
+        if args.hermes_cmd == "install":
+            dest = install(home, link=args.link)
+            print(f"installed teresis provider at {dest}\nactivate: hermes config set memory.provider teresis")
+            return 0
+        res = import_memories(home, db_path=args.db, scope=args.scope, user_scope=args.user_scope,
+                              dry_run=args.dry_run)
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            mode = "dry-run" if res["dry_run"] else f"created {res['created']}, skipped {res['duplicates']} duplicates"
+            print(f"hermes import ({res['hermes_home']} -> {res['db_path']}): "
+                  f"{res['memory_entries']} MEMORY.md ({res['scope']}), "
+                  f"{res['user_entries']} USER.md ({res['user_scope']}) — {mode}")
         return 0
 
     store = MemoryStore(args.db)
