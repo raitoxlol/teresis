@@ -142,7 +142,7 @@ def run(data_path: Path, system: str, out_dir: Path, hermes: Path) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=".data/locomo10.json")
-    ap.add_argument("--system", required=True, choices=["naive", "fts5", "teresis", "teresis-emb", "teresis-rerank", "holographic", "chroma", "lancedb", "mem0", "mem0-hybrid", "tam"])
+    ap.add_argument("--system", required=True, choices=["naive", "fts5", "teresis", "teresis-emb", "teresis-rerank", "holographic", "chroma", "lancedb", "mem0", "mem0-hybrid", "tam", "bm25s", "engram"])
     ap.add_argument("--out", default="bench/results")
     ap.add_argument("--hermes", default=os.path.expanduser("~/.hermes/hermes-agent"))
     args = ap.parse_args()

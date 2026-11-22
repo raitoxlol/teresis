@@ -457,6 +457,74 @@ class TotalAgentMemory:
             self._ctx.__exit__(None, None, None)
 
 
+
+
+class BM25SAdapter:
+    name = "bm25s (pure BM25)"
+
+    def __init__(self, tmp: Path):
+        import bm25s
+        self._bm25s = bm25s
+        self.retriever = None
+        self.sids: list[str] = []
+
+    def add_all(self, units):
+        if not units:
+            return
+        self.sids = [sid for sid, _, _ in units]
+        corpus_tokens = self._bm25s.tokenize([t for _, t, _ in units], show_progress=False)
+        self.retriever = self._bm25s.BM25()
+        self.retriever.index(corpus_tokens, show_progress=False)
+
+    def search(self, query, now):
+        if self.retriever is None or not self.sids:
+            return []
+        q_tokens = self._bm25s.tokenize([query], show_progress=False)
+        k = min(TOPN, len(self.sids))
+        results, _ = self.retriever.retrieve(q_tokens, k=k, show_progress=False)
+        return [self.sids[int(i)] for i in results[0]]
+
+    def close(self):
+        pass
+
+
+class EngramSearch:
+    def __init__(self, tmp: Path):
+        from engram.backends.base import Document
+        from engram.retrieval.pipeline import RetrievalPipeline
+        self._Document = Document
+        self.model = os.environ.get("TERESIS_EMBED_MODEL", "all-minilm")
+        self.name = f"engram-search 0.1.7 (BM25 + {self.model} + RRF, no reranker)"
+        self.emb = _ollama_embedder()
+
+        class _OllamaEngramEmbedder:
+            def encode_query(_self, q: str):
+                return self.emb.embed([q])[0]
+
+        self.pipe = RetrievalPipeline(embedder=_OllamaEngramEmbedder(), use_reranker=False, dense_top_k=TOPN)
+        self.docs = []
+
+    def add_all(self, units):
+        if not units:
+            return
+        texts = [t for _, t, _ in units]
+        vecs = _embed_batched(self.emb, texts, batch=16)
+        self.docs = [
+            self._Document(id=f"{i}:{sid}", text=text, embedding=vec, metadata={"sid": sid, "ts": t})
+            for i, ((sid, text, t), vec) in enumerate(zip(units, vecs))
+        ]
+
+    def search(self, query, now):
+        if not self.docs:
+            return []
+        qdate = datetime.fromtimestamp(now).strftime("%Y/%m/%d") if now else None
+        hits = self.pipe.search(query, self.docs, top_k=TOPN, question_date=qdate)
+        return [h.metadata["sid"] for h in hits]
+
+    def close(self):
+        pass
+
+
 def make(system: str, tmp: Path, hermes: Path):
     if system == "naive":
         return Naive(tmp)
@@ -484,6 +552,10 @@ def make(system: str, tmp: Path, hermes: Path):
         return LanceDBHybrid(tmp)
     if system == "tam":
         return TotalAgentMemory(tmp)
+    if system == "bm25s":
+        return BM25SAdapter(tmp)
+    if system == "engram":
+        return EngramSearch(tmp)
     raise SystemExit(f"unknown system {system}")
 
 

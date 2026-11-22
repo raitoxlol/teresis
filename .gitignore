@@ -26,3 +26,5 @@ build/
 .impeccable/review/
 .impeccable/surfaces/
 .impeccable/questions/
+.venv-engram/
+.venv-honcho/

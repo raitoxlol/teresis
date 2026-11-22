@@ -1,0 +1,1259 @@
+{
+ "summary": {
+  "benchmark": "e2e-200facts",
+  "arm": "teresis",
+  "system": "teresis (no model)",
+  "answer_model": "gemini-3.5-flash-lite",
+  "n": 100,
+  "acc": 0.99,
+  "by_kind": {
+   "abstain": {
+    "n": 10,
+    "acc": 1.0
+   },
+   "direct": {
+    "n": 40,
+    "acc": 0.975
+   },
+   "para": {
+    "n": 20,
+    "acc": 1.0
+   },
+   "pref": {
+    "n": 10,
+    "acc": 1.0
+   },
+   "update": {
+    "n": 20,
+    "acc": 1.0
+   }
+  },
+  "ingest_s": 23.2,
+  "write_llm_calls": 0,
+  "query_p50_ms": 286.4,
+  "errors": 1,
+  "seed": 42
+ },
+ "rows": [
+  {
+   "id": 111,
+   "kind": "direct",
+   "ask": "What is the IP address of my crimson-lemur build server?",
+   "expect": [
+    "10.35.144.17"
+   ],
+   "forbid": [],
+   "answer": "The IP address of your crimson-lemur build server is 10.35.144.17.",
+   "ok": true,
+   "ms": 53.1
+  },
+  {
+   "id": 0,
+   "kind": "direct",
+   "ask": "What port does my wheat-gecko database listen on?",
+   "expect": [
+    "8612"
+   ],
+   "forbid": [],
+   "answer": "Your wheat-gecko database listens on port 8612.",
+   "ok": true,
+   "ms": 100.9
+  },
+  {
+   "id": 197,
+   "kind": "update",
+   "ask": "What port does my sable-kestrel queue listen on right now?",
+   "expect": [
+    "2388"
+   ],
+   "forbid": [
+    "3112"
+   ],
+   "answer": "Your sable-kestrel queue listens on port 2388.",
+   "ok": true,
+   "ms": 618.2
+  },
+  {
+   "id": 156,
+   "kind": "para",
+   "ask": "Where, geographically, is the azure-viper stack hosted?",
+   "expect": [
+    "eu-west-3"
+   ],
+   "forbid": [],
+   "answer": "The azure-viper stack is hosted in the eu-west-3 region.",
+   "ok": true,
+   "ms": 390.0
+  },
+  {
+   "id": 196,
+   "kind": "update",
+   "ask": "What port does my rust-pika queue listen on right now?",
+   "expect": [
+    "7421"
+   ],
+   "forbid": [
+    "6082"
+   ],
+   "answer": "Your rust-pika queue listens on port 7421.",
+   "ok": true,
+   "ms": 477.3
+  },
+  {
+   "id": 194,
+   "kind": "update",
+   "ask": "What port does my coral-lynx queue listen on right now?",
+   "expect": [
+    "2335"
+   ],
+   "forbid": [
+    "6461"
+   ],
+   "answer": "Your coral-lynx queue listens on port 2335.",
+   "ok": true,
+   "ms": 1448.6
+  },
+  {
+   "id": 36,
+   "kind": "direct",
+   "ask": "What is my ivory-heron software licence number?",
+   "expect": [
+    "IVO61"
+   ],
+   "forbid": [],
+   "answer": "Your ivory-heron software licence number is IVO61.",
+   "ok": true,
+   "ms": 323.4
+  },
+  {
+   "id": 136,
+   "kind": "para",
+   "ask": "Who do I page when slate-stoat goes down?",
+   "expect": [
+    "Ivan"
+   ],
+   "forbid": [],
+   "answer": "You page Ivan Ekwueme.",
+   "ok": true,
+   "ms": 1137.0
+  },
+  {
+   "id": 203,
+   "kind": "abstain",
+   "ask": "What is the serial number of my laptop?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don't know.",
+   "ok": true,
+   "ms": 139.0
+  },
+  {
+   "id": 130,
+   "kind": "para",
+   "ask": "Who should I ask when rust-viper is red?",
+   "expect": [
+    "Keiko"
+   ],
+   "forbid": [],
+   "answer": "When the rust-viper build breaks, you should ask Keiko Patel.",
+   "ok": true,
+   "ms": 328.4
+  },
+  {
+   "id": 183,
+   "kind": "update",
+   "ask": "What port does my khaki-ibis queue listen on right now?",
+   "expect": [
+    "5059"
+   ],
+   "forbid": [
+    "1641"
+   ],
+   "answer": "Your khaki-ibis queue listens on port 5059.",
+   "ok": true,
+   "ms": 627.6
+  },
+  {
+   "id": 185,
+   "kind": "update",
+   "ask": "What port does my amber-pika queue listen on right now?",
+   "expect": [
+    "9564"
+   ],
+   "forbid": [
+    "9586"
+   ],
+   "answer": "Your amber-pika queue listens on port 9564.",
+   "ok": true,
+   "ms": 375.8
+  },
+  {
+   "id": 90,
+   "kind": "direct",
+   "ask": "What port does my umber-kestrel database listen on?",
+   "expect": [
+    "8606"
+   ],
+   "forbid": [],
+   "answer": "Your umber-kestrel database listens on port 8606.",
+   "ok": true,
+   "ms": 80.0
+  },
+  {
+   "id": 6,
+   "kind": "direct",
+   "ask": "What is my jade-egret software licence number?",
+   "expect": [
+    "JAD83"
+   ],
+   "forbid": [],
+   "answer": "Your jade-egret software licence number is JAD83.",
+   "ok": true,
+   "ms": 266.7
+  },
+  {
+   "id": 154,
+   "kind": "para",
+   "ask": "Who should I ask when lilac-lemur is red?",
+   "expect": [
+    "Jonas"
+   ],
+   "forbid": [],
+   "answer": "Jonas Haddad is the person to ask when the lilac-lemur build breaks.",
+   "ok": true,
+   "ms": 252.4
+  },
+  {
+   "id": 186,
+   "kind": "update",
+   "ask": "What port does my violet-pika queue listen on right now?",
+   "expect": [
+    "6962"
+   ],
+   "forbid": [
+    "3600"
+   ],
+   "answer": "Your violet-pika queue listens on port 6962.",
+   "ok": true,
+   "ms": 382.5
+  },
+  {
+   "id": 190,
+   "kind": "update",
+   "ask": "What port does my plum-tapir queue listen on right now?",
+   "expect": [
+    "2079"
+   ],
+   "forbid": [
+    "6482"
+   ],
+   "answer": "Your plum-tapir queue listens on port 2079.",
+   "ok": true,
+   "ms": 168.6
+  },
+  {
+   "id": 201,
+   "kind": "abstain",
+   "ask": "What is my mother's maiden name?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don't know.",
+   "ok": true,
+   "ms": 374.3
+  },
+  {
+   "id": 105,
+   "kind": "direct",
+   "ask": "Which bucket do the plum-lynx cold backups go to?",
+   "expect": [
+    "plum-lynx-archive-2323"
+   ],
+   "forbid": [],
+   "answer": "The plum-lynx cold backups go to the bucket plum-lynx-archive-2323.",
+   "ok": true,
+   "ms": 934.3
+  },
+  {
+   "id": 209,
+   "kind": "abstain",
+   "ask": "What is my gym membership number?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don't know.",
+   "ok": true,
+   "ms": 605.9
+  },
+  {
+   "id": 208,
+   "kind": "abstain",
+   "ask": "What car do I drive?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don't know.",
+   "ok": true,
+   "ms": 61.9
+  },
+  {
+   "id": 189,
+   "kind": "update",
+   "ask": "What port does my teal-newt queue listen on right now?",
+   "expect": [
+    "1857"
+   ],
+   "forbid": [
+    "6543"
+   ],
+   "answer": "Your teal-newt queue listens on port 1857.",
+   "ok": true,
+   "ms": 491.1
+  },
+  {
+   "id": 144,
+   "kind": "para",
+   "ask": "Who do I page when ivory-ocelot goes down?",
+   "expect": [
+    "Luis"
+   ],
+   "forbid": [],
+   "answer": "Luis Haddad",
+   "ok": true,
+   "ms": 124.8
+  },
+  {
+   "id": 202,
+   "kind": "abstain",
+   "ask": "Which airline did I fly to Lisbon?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don't know.",
+   "ok": true,
+   "ms": 914.2
+  },
+  {
+   "id": 124,
+   "kind": "para",
+   "ask": "Where, geographically, is the indigo-stoat stack hosted?",
+   "expect": [
+    "us-east-2"
+   ],
+   "forbid": [],
+   "answer": "The indigo-stoat infrastructure lives in the us-east-2 region.",
+   "ok": true,
+   "ms": 200.0
+  },
+  {
+   "id": 96,
+   "kind": "direct",
+   "ask": "What is my maroon-heron software licence number?",
+   "expect": [
+    "MAR41"
+   ],
+   "forbid": [],
+   "answer": "Your maroon-heron software licence number is MAR41.",
+   "ok": true,
+   "ms": 66.1
+  },
+  {
+   "id": 181,
+   "kind": "update",
+   "ask": "What port does my azure-heron queue listen on right now?",
+   "expect": [
+    "2381"
+   ],
+   "forbid": [
+    "6626"
+   ],
+   "answer": "Your azure-heron queue listens on port 2381.",
+   "ok": true,
+   "ms": 147.9
+  },
+  {
+   "id": 193,
+   "kind": "update",
+   "ask": "What port does my slate-lemur queue listen on right now?",
+   "expect": [
+    "3463"
+   ],
+   "forbid": [
+    "5128"
+   ],
+   "answer": "Your slate-lemur queue listens on port 3463.",
+   "ok": true,
+   "ms": 225.7
+  },
+  {
+   "id": 15,
+   "kind": "direct",
+   "ask": "Which bucket do the plum-mole cold backups go to?",
+   "expect": [
+    "plum-mole-archive-3496"
+   ],
+   "forbid": [],
+   "answer": "The plum-mole cold backups go to the bucket plum-mole-archive-3496.",
+   "ok": true,
+   "ms": 153.3
+  },
+  {
+   "id": 42,
+   "kind": "direct",
+   "ask": "What time does the jade-tapir nightly backup job run?",
+   "expect": [
+    "4:28"
+   ],
+   "forbid": [],
+   "answer": "The jade-tapir nightly backup job runs at 4:28 AM.",
+   "ok": true,
+   "ms": 771.1
+  },
+  {
+   "id": 166,
+   "kind": "pref",
+   "ask": "What do I prefer to use on my lilac-bison project instead of pip?",
+   "expect": [
+    "uv"
+   ],
+   "forbid": [],
+   "answer": "You prefer uv on your lilac-bison project.",
+   "ok": true,
+   "ms": 751.7
+  },
+  {
+   "id": 45,
+   "kind": "direct",
+   "ask": "Which bucket do the slate-heron cold backups go to?",
+   "expect": [
+    "slate-heron-archive-3330"
+   ],
+   "forbid": [],
+   "answer": "The slate-heron cold backups go to the bucket slate-heron-archive-3330.",
+   "ok": true,
+   "ms": 580.2
+  },
+  {
+   "id": 174,
+   "kind": "pref",
+   "ask": "What do I prefer to use on my plum-badger project instead of MySQL?",
+   "expect": [
+    "Postgres"
+   ],
+   "forbid": [],
+   "answer": "For your plum-badger project, you prefer Postgres over MySQL.",
+   "ok": true,
+   "ms": 121.2
+  },
+  {
+   "id": 158,
+   "kind": "para",
+   "ask": "Whose sign-off do I need before altering teal-tapir tables?",
+   "expect": [
+    "Dev"
+   ],
+   "forbid": [],
+   "answer": "Dev Ferreira approves every teal-tapir schema change.",
+   "ok": true,
+   "ms": 231.3
+  },
+  {
+   "id": 122,
+   "kind": "para",
+   "ask": "Who should I ask when azure-ibis is red?",
+   "expect": [
+    "Ana"
+   ],
+   "forbid": [],
+   "answer": "Ana Okafor is the person to ask when the azure-ibis build breaks.",
+   "ok": true,
+   "ms": 44.5
+  },
+  {
+   "id": 134,
+   "kind": "para",
+   "ask": "Whose sign-off do I need before altering violet-viper tables?",
+   "expect": [
+    "Mira"
+   ],
+   "forbid": [],
+   "answer": "Mira Ekwueme approves every violet-viper schema change.",
+   "ok": true,
+   "ms": 99.6
+  },
+  {
+   "id": 168,
+   "kind": "pref",
+   "ask": "What do I prefer to use on my violet-egret project instead of flake8?",
+   "expect": [
+    "Ruff"
+   ],
+   "forbid": [],
+   "answer": "For your violet-egret project, you prefer Ruff instead of flake8.",
+   "ok": true,
+   "ms": 568.8
+  },
+  {
+   "id": 18,
+   "kind": "direct",
+   "ask": "How many concurrent jobs is the coral-gecko worker pool capped at?",
+   "expect": [
+    "4249"
+   ],
+   "forbid": [],
+   "answer": "The coral-gecko worker pool is capped at 4249 concurrent jobs.",
+   "ok": true,
+   "ms": 428.4
+  },
+  {
+   "id": 69,
+   "kind": "direct",
+   "ask": "How many seconds is the zinc-lynx cache TTL?",
+   "expect": [
+    "9742"
+   ],
+   "forbid": [],
+   "answer": "The zinc-lynx cache TTL is set to 9742 seconds.",
+   "ok": true,
+   "ms": 135.7
+  },
+  {
+   "id": 138,
+   "kind": "para",
+   "ask": "Who should I ask when rust-lynx is red?",
+   "expect": [
+    "Sven"
+   ],
+   "forbid": [],
+   "answer": "You should ask Sven Novak when the rust-lynx build breaks.",
+   "ok": true,
+   "ms": 167.0
+  },
+  {
+   "id": 66,
+   "kind": "direct",
+   "ask": "What is my azure-marmot software licence number?",
+   "expect": [
+    "AZU66"
+   ],
+   "forbid": [],
+   "answer": "Your azure-marmot software licence number is AZU66.",
+   "ok": true,
+   "ms": 994.9
+  },
+  {
+   "id": 60,
+   "kind": "direct",
+   "ask": "What port does my wheat-heron database listen on?",
+   "expect": [
+    "8483"
+   ],
+   "forbid": [],
+   "answer": "Your wheat-heron database listens on port 8483.",
+   "ok": true,
+   "ms": 269.4
+  },
+  {
+   "id": 21,
+   "kind": "direct",
+   "ask": "What is the IP address of my sable-stoat build server?",
+   "expect": [
+    "10.164.119.183"
+   ],
+   "forbid": [],
+   "answer": "The IP address of your sable-stoat build server is 10.164.119.183.",
+   "ok": true,
+   "ms": 334.3
+  },
+  {
+   "id": 24,
+   "kind": "direct",
+   "ask": "What is the ticket prefix for the umber-gecko project?",
+   "expect": [
+    "UMB73"
+   ],
+   "forbid": [],
+   "answer": "The ticket prefix for the umber-gecko project is UMB73.",
+   "ok": true,
+   "ms": 1051.0
+  },
+  {
+   "id": 184,
+   "kind": "update",
+   "ask": "What port does my plum-puffin queue listen on right now?",
+   "expect": [
+    "8199"
+   ],
+   "forbid": [
+    "8172"
+   ],
+   "answer": "Your plum-puffin queue listens on port 8199.",
+   "ok": true,
+   "ms": 955.8
+  },
+  {
+   "id": 51,
+   "kind": "direct",
+   "ask": "What is the IP address of my khaki-lemur build server?",
+   "expect": [
+    "10.87.84.173"
+   ],
+   "forbid": [],
+   "answer": "The IP address of your khaki-lemur build server is 10.87.84.173.",
+   "ok": true,
+   "ms": 408.0
+  },
+  {
+   "id": 128,
+   "kind": "para",
+   "ask": "Who do I page when olive-pika goes down?",
+   "expect": [
+    "Tomas"
+   ],
+   "forbid": [],
+   "answer": "You page Tomas Ekwueme when olive-pika goes down.",
+   "ok": true,
+   "ms": 1082.3
+  },
+  {
+   "id": 204,
+   "kind": "abstain",
+   "ask": "What is my passport number?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don't know.",
+   "ok": true,
+   "ms": 287.9
+  },
+  {
+   "id": 146,
+   "kind": "para",
+   "ask": "Who should I ask when rust-bison is red?",
+   "expect": [
+    "Priya"
+   ],
+   "forbid": [],
+   "answer": "You should ask Priya Novak when rust-bison is red.",
+   "ok": true,
+   "ms": 345.2
+  },
+  {
+   "id": 63,
+   "kind": "direct",
+   "ask": "Which API version is our umber-lemur service pinned to?",
+   "expect": [
+    "9.90.87"
+   ],
+   "forbid": [],
+   "answer": "Our umber-lemur service is pinned to API version 9.90.87.",
+   "ok": true,
+   "ms": 741.3
+  },
+  {
+   "id": 12,
+   "kind": "direct",
+   "ask": "What time does the teal-viper nightly backup job run?",
+   "expect": [
+    "4:27"
+   ],
+   "forbid": [],
+   "answer": "The teal-viper nightly backup job runs at 4:27 AM.",
+   "ok": true,
+   "ms": 72.3
+  },
+  {
+   "id": 178,
+   "kind": "pref",
+   "ask": "What do I prefer to use on my rust-marmot project instead of flake8?",
+   "expect": [
+    "Ruff"
+   ],
+   "forbid": [],
+   "answer": "For your rust-marmot project, you prefer Ruff over flake8.",
+   "ok": true,
+   "ms": 187.5
+  },
+  {
+   "id": 198,
+   "kind": "update",
+   "ask": "What port does my umber-mole queue listen on right now?",
+   "expect": [
+    "7171"
+   ],
+   "forbid": [
+    "6072"
+   ],
+   "answer": "Your umber-mole queue listens on port 7171.",
+   "ok": true,
+   "ms": 87.8
+  },
+  {
+   "id": 170,
+   "kind": "pref",
+   "ask": "What do I prefer to use on my violet-badger project instead of npm?",
+   "expect": [
+    "pnpm"
+   ],
+   "forbid": [],
+   "answer": "You prefer pnpm on your violet-badger project.",
+   "ok": true,
+   "ms": 104.5
+  },
+  {
+   "id": 93,
+   "kind": "direct",
+   "ask": "Which API version is our azure-puffin service pinned to?",
+   "expect": [
+    "7.127.159"
+   ],
+   "forbid": [],
+   "answer": "Our azure-puffin service is pinned to API version 7.127.159.",
+   "ok": true,
+   "ms": 87.3
+  },
+  {
+   "id": 30,
+   "kind": "direct",
+   "ask": "What port does my plum-egret database listen on?",
+   "expect": [
+    "8434"
+   ],
+   "forbid": [],
+   "answer": "Your plum-egret database listens on port 8434.",
+   "ok": true,
+   "ms": 816.9
+  },
+  {
+   "id": 48,
+   "kind": "direct",
+   "ask": "How many concurrent jobs is the olive-marmot worker pool capped at?",
+   "expect": [
+    "2496"
+   ],
+   "forbid": [],
+   "answer": "The olive-marmot worker pool is capped at 2496 concurrent jobs.",
+   "ok": true,
+   "ms": 127.2
+  },
+  {
+   "id": 176,
+   "kind": "pref",
+   "ask": "What do I prefer to use on my indigo-heron project instead of pip?",
+   "expect": [
+    "uv"
+   ],
+   "forbid": [],
+   "answer": "For your indigo-heron project, you prefer uv over pip.",
+   "ok": true,
+   "ms": 518.3
+  },
+  {
+   "id": 99,
+   "kind": "direct",
+   "ask": "How many seconds is the azure-bison cache TTL?",
+   "expect": [
+    "3129"
+   ],
+   "forbid": [],
+   "answer": "The azure-bison cache TTL is set to 3129 seconds.",
+   "ok": true,
+   "ms": 129.8
+  },
+  {
+   "id": 142,
+   "kind": "para",
+   "ask": "Whose sign-off do I need before altering umber-badger tables?",
+   "expect": [
+    "Tomas"
+   ],
+   "forbid": [],
+   "answer": "Tomas Novak approves every umber-badger schema change.",
+   "ok": true,
+   "ms": 216.0
+  },
+  {
+   "id": 132,
+   "kind": "para",
+   "ask": "Where, geographically, is the amber-kestrel stack hosted?",
+   "expect": [
+    "sa-east-1"
+   ],
+   "forbid": [],
+   "answer": "The amber-kestrel infrastructure lives in the sa-east-1 region.",
+   "ok": true,
+   "ms": 236.0
+  },
+  {
+   "id": 140,
+   "kind": "para",
+   "ask": "Where, geographically, is the wheat-kestrel stack hosted?",
+   "expect": [
+    "eu-west-3"
+   ],
+   "forbid": [],
+   "answer": "The wheat-kestrel infrastructure lives in the eu-west-3 region.",
+   "ok": true,
+   "ms": 73.7
+  },
+  {
+   "id": 188,
+   "kind": "update",
+   "ask": "What port does my olive-mole queue listen on right now?",
+   "expect": [
+    "7697"
+   ],
+   "forbid": [
+    "7347"
+   ],
+   "answer": "Your olive-mole queue listens on port 7697.",
+   "ok": true,
+   "ms": 461.5
+  },
+  {
+   "id": 75,
+   "kind": "direct",
+   "ask": "Which bucket do the olive-badger cold backups go to?",
+   "expect": [
+    "olive-badger-archive-3344"
+   ],
+   "forbid": [],
+   "answer": "The olive-badger cold backups go to the bucket olive-badger-archive-3344.",
+   "ok": true,
+   "ms": 166.4
+  },
+  {
+   "id": 72,
+   "kind": "direct",
+   "ask": "What time does the zinc-bison nightly backup job run?",
+   "expect": [
+    "1:28"
+   ],
+   "forbid": [],
+   "answer": "The zinc-bison nightly backup job runs at 1:28 AM.",
+   "ok": true,
+   "ms": 183.6
+  },
+  {
+   "id": 87,
+   "kind": "direct",
+   "ask": "What hostname serves the rust-mole staging site?",
+   "expect": [
+    "rust-mole.stage.example.net"
+   ],
+   "forbid": [],
+   "answer": "The rust-mole staging site is served from the hostname rust-mole.stage.example.net.",
+   "ok": true,
+   "ms": 78.1
+  },
+  {
+   "id": 33,
+   "kind": "direct",
+   "ask": "Which API version is our violet-heron service pinned to?",
+   "expect": [
+    "2.77.60"
+   ],
+   "forbid": [],
+   "answer": "Our violet-heron service is pinned to API version 2.77.60.",
+   "ok": true,
+   "ms": 63.1
+  },
+  {
+   "id": 39,
+   "kind": "direct",
+   "ask": "How many seconds is the maroon-egret cache TTL?",
+   "expect": [
+    "7232"
+   ],
+   "forbid": [],
+   "answer": "The maroon-egret cache TTL is set to 7232 seconds.",
+   "ok": true,
+   "ms": 73.8
+  },
+  {
+   "id": 9,
+   "kind": "direct",
+   "ask": "How many seconds is the coral-newt cache TTL?",
+   "expect": [
+    "5471"
+   ],
+   "forbid": [],
+   "answer": "The coral-newt cache TTL is set to 5471 seconds.",
+   "ok": true,
+   "ms": 594.1
+  },
+  {
+   "id": 195,
+   "kind": "update",
+   "ask": "What port does my indigo-gecko queue listen on right now?",
+   "expect": [
+    "6731"
+   ],
+   "forbid": [
+    "3317"
+   ],
+   "answer": "Your indigo-gecko queue listens on port 6731.",
+   "ok": true,
+   "ms": 264.5
+  },
+  {
+   "id": 81,
+   "kind": "direct",
+   "ask": "What is the IP address of my azure-mole build server?",
+   "expect": [
+    "10.157.92.58"
+   ],
+   "forbid": [],
+   "answer": "ERROR: HTTP Error 429: Too Many Requests",
+   "ok": false,
+   "ms": 350.2
+  },
+  {
+   "id": 206,
+   "kind": "abstain",
+   "ask": "Which hospital was I born in?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don't know.",
+   "ok": true,
+   "ms": 65.9
+  },
+  {
+   "id": 172,
+   "kind": "pref",
+   "ask": "What do I prefer to use on my rust-ibis project instead of vim?",
+   "expect": [
+    "Helix"
+   ],
+   "forbid": [],
+   "answer": "For your rust-ibis project, you prefer Helix over vim.",
+   "ok": true,
+   "ms": 1068.1
+  },
+  {
+   "id": 150,
+   "kind": "para",
+   "ask": "Whose sign-off do I need before altering indigo-mole tables?",
+   "expect": [
+    "Luis"
+   ],
+   "forbid": [],
+   "answer": "You need Luis Moreau's sign-off.",
+   "ok": true,
+   "ms": 1148.6
+  },
+  {
+   "id": 148,
+   "kind": "para",
+   "ask": "Where, geographically, is the teal-heron stack hosted?",
+   "expect": [
+    "eu-west-3"
+   ],
+   "forbid": [],
+   "answer": "The teal-heron infrastructure lives in the eu-west-3 region.",
+   "ok": true,
+   "ms": 887.0
+  },
+  {
+   "id": 187,
+   "kind": "update",
+   "ask": "What port does my teal-kestrel queue listen on right now?",
+   "expect": [
+    "5634"
+   ],
+   "forbid": [
+    "7108"
+   ],
+   "answer": "Your teal-kestrel queue listens on port 5634.",
+   "ok": true,
+   "ms": 403.9
+  },
+  {
+   "id": 164,
+   "kind": "pref",
+   "ask": "What do I prefer to use on my slate-walrus project instead of MySQL?",
+   "expect": [
+    "Postgres"
+   ],
+   "forbid": [],
+   "answer": "You prefer Postgres for your slate-walrus project.",
+   "ok": true,
+   "ms": 103.2
+  },
+  {
+   "id": 180,
+   "kind": "update",
+   "ask": "What port does my azure-otter queue listen on right now?",
+   "expect": [
+    "2695"
+   ],
+   "forbid": [
+    "8381"
+   ],
+   "answer": "Your azure-otter queue listens on port 2695.",
+   "ok": true,
+   "ms": 359.6
+  },
+  {
+   "id": 117,
+   "kind": "direct",
+   "ask": "What hostname serves the slate-ocelot staging site?",
+   "expect": [
+    "slate-ocelot.stage.example.net"
+   ],
+   "forbid": [],
+   "answer": "The slate-ocelot staging site is served from the hostname slate-ocelot.stage.example.net.",
+   "ok": true,
+   "ms": 264.1
+  },
+  {
+   "id": 207,
+   "kind": "abstain",
+   "ask": "What is my landlord's phone number?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don't know.",
+   "ok": true,
+   "ms": 127.9
+  },
+  {
+   "id": 205,
+   "kind": "abstain",
+   "ask": "What is the name of my first pet?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don't know.",
+   "ok": true,
+   "ms": 56.1
+  },
+  {
+   "id": 114,
+   "kind": "direct",
+   "ask": "What is the ticket prefix for the plum-viper project?",
+   "expect": [
+    "PLU45"
+   ],
+   "forbid": [],
+   "answer": "The ticket prefix for the plum-viper project is PLU45.",
+   "ok": true,
+   "ms": 756.4
+  },
+  {
+   "id": 152,
+   "kind": "para",
+   "ask": "Who do I page when maroon-marmot goes down?",
+   "expect": [
+    "Luis"
+   ],
+   "forbid": [],
+   "answer": "The maroon-marmot on-call engineer this quarter is Luis Kobayashi.",
+   "ok": true,
+   "ms": 647.6
+  },
+  {
+   "id": 182,
+   "kind": "update",
+   "ask": "What port does my olive-gecko queue listen on right now?",
+   "expect": [
+    "3827"
+   ],
+   "forbid": [
+    "9266"
+   ],
+   "answer": "Your olive-gecko queue listens on port 3827.",
+   "ok": true,
+   "ms": 62.3
+  },
+  {
+   "id": 108,
+   "kind": "direct",
+   "ask": "How many concurrent jobs is the zinc-puffin worker pool capped at?",
+   "expect": [
+    "4743"
+   ],
+   "forbid": [],
+   "answer": "The zinc-puffin worker pool is capped at 4743 concurrent jobs.",
+   "ok": true,
+   "ms": 923.8
+  },
+  {
+   "id": 57,
+   "kind": "direct",
+   "ask": "What hostname serves the coral-otter staging site?",
+   "expect": [
+    "coral-otter.stage.example.net"
+   ],
+   "forbid": [],
+   "answer": "The coral-otter staging site is served from the hostname coral-otter.stage.example.net.",
+   "ok": true,
+   "ms": 355.2
+  },
+  {
+   "id": 191,
+   "kind": "update",
+   "ask": "What port does my maroon-puffin queue listen on right now?",
+   "expect": [
+    "2548"
+   ],
+   "forbid": [
+    "6401"
+   ],
+   "answer": "Your maroon-puffin queue listens on port 2548.",
+   "ok": true,
+   "ms": 66.3
+  },
+  {
+   "id": 160,
+   "kind": "pref",
+   "ask": "What do I prefer to use on my violet-tapir project instead of npm?",
+   "expect": [
+    "pnpm"
+   ],
+   "forbid": [],
+   "answer": "For your violet-tapir project, you prefer pnpm.",
+   "ok": true,
+   "ms": 673.4
+  },
+  {
+   "id": 78,
+   "kind": "direct",
+   "ask": "How many concurrent jobs is the olive-heron worker pool capped at?",
+   "expect": [
+    "5949"
+   ],
+   "forbid": [],
+   "answer": "The olive-heron worker pool is capped at 5949 concurrent jobs.",
+   "ok": true,
+   "ms": 97.1
+  },
+  {
+   "id": 3,
+   "kind": "direct",
+   "ask": "Which API version is our crimson-viper service pinned to?",
+   "expect": [
+    "7.21.184"
+   ],
+   "forbid": [],
+   "answer": "Our crimson-viper service is pinned to API version 7.21.184.",
+   "ok": true,
+   "ms": 154.5
+  },
+  {
+   "id": 84,
+   "kind": "direct",
+   "ask": "What is the ticket prefix for the teal-bison project?",
+   "expect": [
+    "TEA31"
+   ],
+   "forbid": [],
+   "answer": "The ticket prefix for the teal-bison project is TEA31.",
+   "ok": true,
+   "ms": 171.4
+  },
+  {
+   "id": 120,
+   "kind": "para",
+   "ask": "Who do I page when sable-newt goes down?",
+   "expect": [
+    "Ravi"
+   ],
+   "forbid": [],
+   "answer": "You page Ravi Novak when sable-newt goes down.",
+   "ok": true,
+   "ms": 47.7
+  },
+  {
+   "id": 54,
+   "kind": "direct",
+   "ask": "What is the ticket prefix for the teal-egret project?",
+   "expect": [
+    "TEA89"
+   ],
+   "forbid": [],
+   "answer": "The ticket prefix for the teal-egret project is TEA89.",
+   "ok": true,
+   "ms": 369.1
+  },
+  {
+   "id": 126,
+   "kind": "para",
+   "ask": "Whose sign-off do I need before altering crimson-heron tables?",
+   "expect": [
+    "Sven"
+   ],
+   "forbid": [],
+   "answer": "You need Sven Haddad's sign-off before altering crimson-heron tables.",
+   "ok": true,
+   "ms": 700.3
+  },
+  {
+   "id": 200,
+   "kind": "abstain",
+   "ask": "What is the name of my dentist?",
+   "expect": [],
+   "forbid": [],
+   "answer": "I don't know.",
+   "ok": true,
+   "ms": 422.4
+  },
+  {
+   "id": 162,
+   "kind": "pref",
+   "ask": "What do I prefer to use on my violet-newt project instead of vim?",
+   "expect": [
+    "Helix"
+   ],
+   "forbid": [],
+   "answer": "For your violet-newt project, you prefer Helix over vim.",
+   "ok": true,
+   "ms": 284.9
+  },
+  {
+   "id": 27,
+   "kind": "direct",
+   "ask": "What hostname serves the wheat-newt staging site?",
+   "expect": [
+    "wheat-newt.stage.example.net"
+   ],
+   "forbid": [],
+   "answer": "The wheat-newt staging site is served from the hostname wheat-newt.stage.example.net.",
+   "ok": true,
+   "ms": 306.8
+  },
+  {
+   "id": 192,
+   "kind": "update",
+   "ask": "What port does my khaki-heron queue listen on right now?",
+   "expect": [
+    "5655"
+   ],
+   "forbid": [
+    "7333"
+   ],
+   "answer": "Your khaki-heron queue listens on port 5655.",
+   "ok": true,
+   "ms": 653.9
+  },
+  {
+   "id": 102,
+   "kind": "direct",
+   "ask": "What time does the violet-marmot nightly backup job run?",
+   "expect": [
+    "1:38"
+   ],
+   "forbid": [],
+   "answer": "The violet-marmot nightly backup job runs at 1:38 AM.",
+   "ok": true,
+   "ms": 135.2
+  },
+  {
+   "id": 199,
+   "kind": "update",
+   "ask": "What port does my coral-egret queue listen on right now?",
+   "expect": [
+    "3093"
+   ],
+   "forbid": [
+    "6381"
+   ],
+   "answer": "Your coral-egret queue listens on port 3093.",
+   "ok": true,
+   "ms": 963.6
+  }
+ ]
+}

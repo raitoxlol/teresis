@@ -78,12 +78,14 @@ evaluated once on the untouched 100-question test split (seed 13):
 | **teresis + all-minilm** | **0.99** | 0.95 | 0.944 | cached* | 51 ms** |
 | mem0 OSS 2.2.1 hybrid (BM25 + spaCy + all-minilm, infer=False) | 0.97 | 0.93 | 0.932 | 60* | 714 ms |
 | LanceDB hybrid (BM25 + all-minilm, RRF) | 0.97 | 0.93 | 0.930 | cached* | 23 ms |
+| engram-search 0.1.7 (BM25 + all-minilm + RRF, no reranker) | 0.97 | 0.91 | 0.905 | cached* | 120 ms |
 | ChromaDB (all-minilm) | 0.98 | **0.96** | 0.904 | 15.9* | 27 ms |
 | mem0 OSS 2.2.1 (vector only, all-minilm, infer=False) | 0.98 | **0.96** | 0.903 | 8.3* | 366 ms |
 | total-agent-memory 14.10 (FastEmbed + FTS + RRF, no reranker) | 0.97 | 0.92 | 0.900 | 10.8 | 108 ms |
 | **teresis (no model)** | 0.98 | 0.89 | 0.888 | 81 | 19 ms |
 | SQLite FTS5 (BM25, porter) | 0.96 | 0.87 | 0.881 | 18,983 | 0.5 ms |
 | holographic (Hermes plugin) | 0.94 | 0.85 | 0.859 | 7.2 | 23 ms |
+| bm25s (pure BM25) | 0.95 | 0.86 | 0.852 | 2,653 | 0.6 ms |
 | naive LIKE, newest first | 0.35 | 0.18 | 0.195 | — | 6 ms |
 
 All 470 non-abstention questions, teresis with no model: recall_any@5 0.968, recall_all@10 0.913,
@@ -137,6 +139,8 @@ Everything ran on nucbox (CPU only).
 | LanceDB hybrid (BM25 + all-minilm, RRF) | 0.589 | 0.686 | 0.555 | 0.457 | 63 | 19 ms |
 | mem0 OSS 2.2.1 hybrid (BM25 + spaCy + all-minilm, infer=False) | 0.564 | 0.682 | 0.553 | 0.433 | 50 | 221 ms |
 | holographic (Hermes plugin) | 0.562 | 0.638 | 0.530 | 0.449 | 41 | 10 ms |
+| bm25s (pure BM25) | 0.513 | 0.587 | 0.486 | 0.401 | 12,118 | 0.4 ms |
+| engram-search 0.1.7 (BM25 + all-minilm + RRF, no reranker) | 0.484 | 0.606 | 0.486 | 0.344 | cached* | 71 ms |
 | mem0 OSS 2.2.1 (vector only, all-minilm, infer=False) | 0.449 | 0.566 | 0.440 | 0.342 | 71 | 126 ms |
 | ChromaDB (all-minilm) | 0.448 | 0.563 | 0.439 | 0.341 | 60 | 11 ms |
 | naive LIKE, newest first | 0.025 | 0.049 | 0.038 | 0.021 | — | 0.8 ms |
@@ -168,6 +172,29 @@ How to read it:
 
 Reproduce: download `locomo10.json` from the LoCoMo repo to `.data/`, then
 `python bench/locomo.py --data .data/locomo10.json --system <naive|teresis|teresis-emb|holographic|mem0>`.
+
+## Head-to-head: 200-fact E2E (including LLM-backed mem0 `infer=True`)
+
+`bench/e2e_compare.py` feeds the same 200 facts + 20 updates (220 turns) into each memory system,
+then asks 100 questions (40 direct, 20 paraphrase, 10 preference, 20 changed values where newest
+must win and old is forbidden, 10 abstentions) using the exact same answer model
+(`gemini-3.5-flash-lite`, temperature 0) and deterministic exact string-match grading (no AI judge).
+
+| System | Clean acc | Raw acc (incl. 429s) | Updates (20) | Paraphrase (20) | Write LLM calls | Ingest time |
+| --- | --- | --- | --- | --- | --- | --- |
+| **teresis + all-minilm** | **100/100 (100%)** | **100%** | **20/20** | **20/20** | **0** | 56 s |
+| **teresis (no model)** | **99/99 (100%)** | 99% (1 API 429) | **20/20** | **20/20** | **0** | **23 s** |
+| mem0 OSS (`infer=True`, `gemini-3.5-flash-lite` + BM25 + spaCy + `all-minilm`) | 93/93 (100%) | 93% (7 API 429s) | 20/20 | 19/20* | 88 | 321 s |
+| holographic (Hermes plugin) | 64/98 (65.3%) | 64% (2 API 429s) | 0/20 | 5/20 | 0 | 7 s |
+
+- Clean accuracy excludes transient Gemini free-tier `HTTP 429` errors on the answer call (1 on
+  `teresis`, 2 on `holographic`, 7 on `mem0-llm`). With `infer=True` + BM25 + spaCy enabled, mem0
+  matches Teresis's accuracy on this 200-fact set — at the cost of 88 write-time LLM calls and 14×
+  slower ingest than no-model Teresis.
+- Self-hosted **Honcho v3** (Docker: Postgres pgvector + Redis + API + Deriver) was also brought up
+  locally; ingesting the 220 turns queued 440 deriver work units (~440 LLM calls), exhausting the
+  500-request/day Gemini free-tier quota before derivation finished (illustrating the operational
+  cost of per-turn LLM derivation vs deterministic local writes).
 
 ## Live in Hermes
 

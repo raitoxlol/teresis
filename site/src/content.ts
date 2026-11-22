@@ -35,6 +35,8 @@ export const LOCOMO: BarRow[] = [
   {label: 'LanceDB hybrid', value: 0.589, display: '0.589', note: '19 ms'},
   {label: 'mem0 OSS hybrid (infer=False)', value: 0.564, display: '0.564', note: '221 ms'},
   {label: 'holographic (Hermes plugin)', value: 0.562, display: '0.562', note: '10 ms'},
+  {label: 'bm25s (pure BM25)', value: 0.513, display: '0.513', note: '0.4 ms'},
+  {label: 'engram-search (no reranker)', value: 0.484, display: '0.484', note: '71 ms'},
   {label: 'ChromaDB', value: 0.448, display: '0.448', note: '11 ms'},
   {label: 'Naive LIKE, newest first', value: 0.025, display: '0.025', note: '0.8 ms'},
 ];
@@ -44,11 +46,13 @@ export const LONGMEMEVAL: BarRow[] = [
   {label: 'Teresis + all-minilm', value: 0.944, display: '0.944', note: '51 ms', highlight: true},
   {label: 'mem0 OSS hybrid (infer=False)', value: 0.932, display: '0.932', note: '714 ms'},
   {label: 'LanceDB hybrid', value: 0.930, display: '0.930', note: '23 ms'},
+  {label: 'engram-search (no reranker)', value: 0.905, display: '0.905', note: '120 ms'},
   {label: 'ChromaDB', value: 0.904, display: '0.904', note: '27 ms'},
   {label: 'total-agent-memory (no reranker)', value: 0.900, display: '0.900', note: '108 ms'},
   {label: 'Teresis, no model', value: 0.888, display: '0.888', note: '19 ms', highlight: true},
   {label: 'SQLite FTS5 (BM25)', value: 0.881, display: '0.881', note: '0.5 ms'},
   {label: 'holographic (Hermes plugin)', value: 0.859, display: '0.859', note: '23 ms'},
+  {label: 'bm25s (pure BM25)', value: 0.852, display: '0.852', note: '0.6 ms'},
   {label: 'Naive LIKE, newest first', value: 0.195, display: '0.195', note: '6 ms'},
 ];
 
