@@ -46,7 +46,7 @@ function Install({compact = false}: {compact?: boolean}) {
           </button>
         )}
       </div>
-      <p className="note">Install preview, for early-access users.</p>
+      <p className="note">Apache 2.0 open source · zero required dependencies.</p>
     </div>
   );
 }
@@ -211,9 +211,10 @@ export function App() {
             <a href="#how">How it keeps</a>
             <a href="#proof">Benchmarks</a>
             <a href="#install">Install</a>
+            <a href="https://github.com/raitoxlol/teresis" target="_blank" rel="noopener noreferrer">GitHub</a>
           </div>
           <a className="pill" href="#join">
-            Join the waitlist
+            Get updates
           </a>
         </nav>
         <div className="hero-copy" id="top">
@@ -296,7 +297,7 @@ export function App() {
           <div className="wrap">
             <Mark className="close-mark" />
             <h2>Keep what your agents learn.</h2>
-            <p className="lede">Teresis is in private early access.</p>
+            <p className="lede">Open source under Apache 2.0. Leave your email for release notes and updates.</p>
             <Waitlist id="email-close" />
           </div>
         </section>
@@ -307,12 +308,12 @@ export function App() {
         <span>
           τήρησις <i>·</i> faithful keeping
         </span>
-        <span className="c">© 2026 Teresis</span>
+        <span className="c"><a href="https://github.com/raitoxlol/teresis" target="_blank" rel="noopener noreferrer">GitHub</a> · Apache 2.0</span>
       </footer>
 
       <div className={`bar${showBar ? ' show' : ''}`} aria-hidden={!showBar} inert={!showBar}>
         <span className="bar-t">
-          <Mark /> Teresis is in private early access.
+          <Mark /> Apache 2.0 · get release updates.
         </span>
         <Waitlist id="email-bar" compact />
       </div>

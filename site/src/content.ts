@@ -1,5 +1,5 @@
 // Every number here comes from README.md and bench/results/*.json in this repo.
-// Teresis is private for now: no repository link and no "open source" claim on the page.
+// Apache-2.0 open source: https://github.com/raitoxlol/teresis
 
 export type BarRow = {label: string; value: number; display: string; note?: string; highlight?: boolean};
 
@@ -84,11 +84,11 @@ export const STEPS: Step[] = [
 ];
 
 export const SNIPPETS = {
-  Hermes: `python3 -m teresis hermes install
-hermes config set memory.provider teresis`,
-  MCP: `claude mcp add teresis -- python3 -m teresis serve \\
-  --scope project/atlas --scope user`,
-  HTTP: `python3 -m teresis http --port 7077 --scope global &
+  Hermes: `pip install teresis
+teresis hermes install && hermes config set memory.provider teresis`,
+  MCP: `pip install teresis
+claude mcp add teresis -- teresis serve --scope project/atlas --scope user`,
+  HTTP: `teresis http --port 7077 --scope global &
 curl -s localhost:7077/tools/memory_recall \\
   -H "Authorization: Bearer $TERESIS_HTTP_TOKEN" -d '{"query":"deploy"}'`,
   Python: `from teresis import MemoryStore
@@ -115,7 +115,7 @@ export const FAQ = [
     a: 'Yes. Scopes keep them apart where they should be apart, and SQLite WAL mode lets several processes write at once. Subagents and crons can run read-only, so background work never poisons memory.',
   },
   {
-    q: 'When can I use it?',
-    a: 'Teresis is in private early access. Join the waitlist to get access as it opens.',
+    q: 'How is it licensed?',
+    a: 'Teresis is open source under the Apache 2.0 license. Install it with pip or browse the source on GitHub.',
   },
 ];

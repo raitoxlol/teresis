@@ -47,7 +47,7 @@ export function Waitlist({id, compact = false}: {id: string; compact?: boolean})
       </label>
       <input id={id} name="email" type="email" required autoComplete="email" placeholder="you@studio.dev" />
       <button type="submit" disabled={state === 'sending'}>
-        {state === 'sending' ? 'Joining…' : 'Join the waitlist'}
+        {state === 'sending' ? 'Joining…' : 'Get updates'}
       </button>
       {state === 'error' && (
         <p className="wait-msg" role="alert">
