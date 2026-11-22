@@ -11,6 +11,7 @@ from teresis.extract import extract
 from teresis.hermes import TeresisMemoryProvider, install
 from teresis.http import make_handler
 from teresis.mcp import Server
+from teresis.secrets import contains_secret, redact_secrets
 
 
 class ExtractTests(unittest.TestCase):
@@ -39,6 +40,92 @@ class ExtractTests(unittest.TestCase):
             ("procedure", "my deploy rule is that we never ship on Fridays"),
             ("fact", "my staging database is called quokka-staging on port 5433."),
         })
+
+    def test_extracts_agentic_coding_facts(self):
+        text = ("We switched from npm to pnpm. Migrated the DB from MySQL to Postgres.\n"
+                "Use uv instead of pip for installs. We replaced Redis with Valkey.\n"
+                "We moved to a monorepo. We stopped using webpack last month.\n"
+                "Run pytest -x to verify the fix. Deploys happen via Fly.io.\n"
+                "Tests live in tests/e2e. This repo uses SQLite for storage.\n"
+                "The codebase uses ruff for linting. We run CI on GitHub Actions.")
+        got = {(c.kind, c.content) for c in extract(text)}
+        self.assertIn(("decision", "We switched from npm to pnpm."), got)
+        self.assertIn(("decision", "Migrated the DB from MySQL to Postgres."), got)
+        self.assertIn(("decision", "Use uv instead of pip for installs."), got)
+        self.assertIn(("decision", "We replaced Redis with Valkey."), got)
+        self.assertIn(("decision", "We moved to a monorepo."), got)
+        self.assertIn(("decision", "We stopped using webpack last month."), got)
+        self.assertIn(("procedure", "Run pytest -x to verify the fix."), got)
+        self.assertIn(("procedure", "Deploys happen via Fly.io."), got)
+        self.assertIn(("procedure", "Tests live in tests/e2e."), got)
+        self.assertIn(("fact", "This repo uses SQLite for storage."), got)
+        self.assertIn(("fact", "The codebase uses ruff for linting."), got)
+        self.assertIn(("fact", "We run CI on GitHub Actions."), got)
+
+    def test_agentic_patterns_still_skip_questions_and_hypotheticals(self):
+        text = ("Should we switch to Bun? What if we moved to Deno?\n"
+                "If we replaced the cache with Redis. Could we run tests on CI?")
+        self.assertEqual(extract(text), [])
+
+
+class SecretsTests(unittest.TestCase):
+    def test_detects_real_key_formats(self):
+        cases = {
+            f"key sk-{'a1' * 25}": "openai_key",
+            f"key sk-ant-{'b2' * 25}": "anthropic_key",
+            f"pat ghp_{'Q7' * 20}": "github_token",
+            f"pat github_pat_{'Ab1_' * 11}": "github_token",
+            f"aws AKIA{'B' * 16}": "aws_access_key",
+            f"slack xoxb-{'9' * 11}-{'a' * 12}": "slack_token",
+            f"hf hf_{'xY4' * 10}": "huggingface_token",
+            f"re re_{'z9' * 15}": "resend_key",
+            f"stripe sk_live_{'q' * 24}": "stripe_key",
+            f"auth Bearer {'T' * 40}": "bearer_token",
+            f"jwt eyJ{'a' * 12}.eyJ{'b' * 12}.{'c' * 16}": "bearer_token",
+            f"OPENAI_API_KEY={'x1' * 20}": "env_secret",
+            f"DB_PASSWORD: {'p9' * 20}": "env_secret",
+            '{"api_key": "' + 'ab12cd34' * 3 + '"}': "env_secret",
+            f"dsn postgres://u:{'sekrit9' * 2}@h/db": "uri_credential",
+            "-----BEGIN EC PRIVATE KEY-----\nabc123\n-----END EC PRIVATE KEY-----": "private_key",
+        }
+        for text, want in cases.items():
+            self.assertEqual(contains_secret(text), want, text)
+
+    def test_ignores_placeholders_and_ordinary_text(self):
+        clean = [
+            "Service port is 4000",
+            "docs at https://example.com/docs/page.html",
+            "DB url postgres://localhost:5432/appdb",
+            "git remote ssh://git@github.com/org/repo.git",
+            "commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+            "uuid 9b2e4c5a-1234-5678-9abc-def012345678",
+            "API_KEY=your-api-key-here",
+            "TOKEN=$HOME",
+            "SECRET=<your-secret>",
+            "PASSWORD=xxx",
+            "the secret to good pasta is salt",
+            "the monkey keyboard tokenizer session",
+            "Never commit secrets",
+            "We switched from npm to pnpm",
+            "AKIAIOSFODNN7EXAMPLE is the AWS docs example",
+            "password=correct horse battery staple",
+            "remember to rotate the key=soon please",
+        ]
+        for t in clean:
+            self.assertIsNone(contains_secret(t), t)
+
+    def test_redact_replaces_only_the_secret_span(self):
+        text, kinds = redact_secrets(
+            f"Deploy uses OPENAI_API_KEY=sk-{'a1' * 25} and db postgres://u:{'sekrit9' * 2}@h/db")
+        self.assertEqual(kinds, ["openai_key", "uri_credential"])
+        self.assertIn("OPENAI_API_KEY=[REDACTED:openai_key]", text)
+        self.assertIn("postgres://u:[REDACTED:uri_credential]@h/db", text)
+        self.assertIn("Deploy uses", text)
+        self.assertIsNone(contains_secret(text))  # nothing left to flag
+
+    def test_redact_reports_each_kind_once(self):
+        _, kinds = redact_secrets(f"a sk-{'a1' * 25} b sk-{'c2' * 25}")
+        self.assertEqual(kinds, ["openai_key"])
 
 
 class StoreExtrasTests(unittest.TestCase):
@@ -166,6 +253,69 @@ class HermesProviderTests(unittest.TestCase):
         self.assertIn("Saved to long-term memory",
                       p.on_pre_compress([{"role": "user", "content": "We decided to ship on Thursdays."}]))
         p.on_delegation("audit deps", "2 outdated packages", child_session_id="c1")
+        p.shutdown()
+
+    def test_rerank_config_schema_and_fallback(self):
+        import os
+        old = {v: os.environ.get(v) for v in ("TERESIS_RERANK", "TERESIS_RERANK_MODEL")}
+
+        def restore():
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        self.addCleanup(restore)
+
+        schema = {e["key"]: e for e in TeresisMemoryProvider().get_config_schema()}
+        self.assertIn("rerank", schema)
+        self.assertIn("rerank_model", schema)
+        self.assertEqual(schema["rerank_model"]["default"], "Xenova/ms-marco-MiniLM-L-6-v2")
+
+        # an unknown reranker warns and disables; initialize() must never crash
+        p = TeresisMemoryProvider(config={"db_path": self.db, "rerank": "bogus-backend"})
+        p.initialize("s", hermes_home=self.d.name, platform="cli", agent_identity="max")
+        self.assertIsNone(p._store.reranker)
+        p.shutdown()
+
+        # a fastembed config initializes cleanly whether or not fastembed is installed
+        p2 = TeresisMemoryProvider(
+            config={"db_path": str(Path(self.d.name) / "h2.db"), "rerank": "fastembed"})
+        p2.initialize("s2", hermes_home=self.d.name, platform="cli", agent_identity="max")
+        try:
+            import fastembed  # noqa: F401
+        except Exception:
+            self.assertIsNone(p2._store.reranker)
+        else:
+            self.assertIsNotNone(p2._store.reranker)
+        self.assertIsNotNone(p2._store)
+        p2.shutdown()
+
+    def test_writes_are_scrubbed_of_secrets(self):
+        p = self.provider()
+        ghp = "ghp_" + "Q7" * 20
+        sk = "sk-" + "a1" * 25
+        env = "h7" * 20
+        p.on_memory_write("add", "memory", f"The gateway token is {ghp}.")
+        p.sync_turn(f"my api key is {sk}, keep it safe", "Noted.")
+        p.on_delegation(f"rotate TOKEN={env}", "done")
+        blob = json.dumps(list(p._store.export()))
+        for raw in (ghp, sk, env):
+            self.assertNotIn(raw, blob)
+        self.assertIn("[REDACTED:", blob)
+        p.shutdown()
+
+    def test_replacement_statements_are_saved_once(self):
+        p = self.provider()
+        p.sync_turn("we switched from npm to pnpm for this repo.", "ok")
+        hits = p._store.recall("package manager npm pnpm", scope=p._read_scopes, k=10,
+                               exclude_kinds=["episode"])
+        self.assertTrue(any("switched" in m.content and "pnpm" in m.content for m in hits))
+        # restating the same switch dedupes instead of doubling
+        p.sync_turn("we switched from npm to pnpm for this repo.", "ok")
+        hits = [m for m in p._store.recall("switched pnpm", scope=p._read_scopes, k=10,
+                                           exclude_kinds=["episode"]) if "switched" in m.content]
+        self.assertEqual(len(hits), 1)
         p.shutdown()
 
     def test_subagent_is_read_only(self):

@@ -6,7 +6,7 @@ export type BarRow = {label: string; value: number; display: string; note?: stri
 export const HERO = {
   line1: 'Your agents forget.',
   line2: 'Teresis keeps.',
-  sub: 'Local long-term memory for AI agents. One SQLite file, no dependencies, and nothing leaves your machine by default.',
+  sub: 'Local memory for autonomous agents, native to Hermes and shared with Claude Code, Codex and every MCP client. Fully local by default.',
   proof: {teresis: '100/100', stock: '60/100'},
 };
 
@@ -58,17 +58,17 @@ export type Step = {title: string; body: string; demo: 'remember' | 'supersede' 
 export const STEPS: Step[] = [
   {
     title: 'One file keeps it all.',
-    body: 'Every fact, preference and decision your agents learn lands in one SQLite file on your machine. No server, no account, no dependencies.',
+    body: 'Every fact, preference and decision your agents learn lands in one SQLite file, one store shared by every agent you run. No server, no account, no dependencies.',
     demo: 'remember',
   },
   {
     title: 'New facts replace old ones.',
-    body: 'Agents repeat themselves and change their minds. A repeated fact reinforces the memory it repeats. A keyed fact replaces its old value, and the history stays for anyone who asks what was true before.',
+    body: 'Agents repeat themselves and change their minds. A repeated fact reinforces; a keyed fact supersedes its old value, and history keeps what was true before. Secrets are redacted on write.',
     demo: 'supersede',
   },
   {
     title: 'Projects never leak.',
-    body: 'Scopes are paths. Recall sees a scope and its parents, never its siblings, so project/atlas never reads what project/helios learned.',
+    body: 'Scopes are paths: global, project/atlas, hermes/main. Recall sees a scope and its parents, never its siblings; subagents and crons run read-only.',
     demo: 'scopes',
   },
   {
@@ -78,7 +78,7 @@ export const STEPS: Step[] = [
   },
   {
     title: 'Local and deterministic.',
-    body: 'No model call per turn, so writes are exact and repeatable. WAL mode lets several agents share one store; the test suite runs four processes writing at once.',
+    body: 'Zero LLM calls per turn, so writes are exact and repeatable. WAL mode lets several agents share one store; the test suite runs four processes writing at once.',
     demo: 'local',
   },
 ];
@@ -108,11 +108,11 @@ export const FAQ = [
   },
   {
     q: 'Which agents does it work with?',
-    a: 'Hermes Agent natively, anything that speaks MCP or HTTP, such as Claude Code, Codex and Cursor, and a Python API. All of them share the same store.',
+    a: 'A native memory provider for Hermes Agent, an MCP server for Claude Code, Codex, Cursor and every other MCP client, plus HTTP and Python APIs. All share one store.',
   },
   {
     q: 'Can several agents share one memory?',
-    a: 'Yes. Scopes keep them apart where they should be apart, and SQLite WAL mode lets several processes write at once.',
+    a: 'Yes. Scopes keep them apart where they should be apart, and SQLite WAL mode lets several processes write at once. Subagents and crons can run read-only, so background work never poisons memory.',
   },
   {
     q: 'When can I use it?',

@@ -22,7 +22,9 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import embed as _embed
 from . import extract as _extract
+from . import secrets as _secrets
 from .mcp import TOOLS, Server
 from .store import MemoryStore, default_db_path
 from .text import containment, term_set
@@ -57,6 +59,8 @@ DEFAULTS: Dict[str, Any] = {
     "capture_turns": True,
     "episode_ttl_days": 30,
     "auto_extract": True,
+    "rerank": "",            # "fastembed" enables the local ONNX cross-encoder; empty/none = off
+    "rerank_model": "Xenova/ms-marco-MiniLM-L-6-v2",
 }
 
 
@@ -131,10 +135,17 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._session_id = session_id
         self._platform = kwargs.get("platform", "")
         # Hermes does not forward arbitrary env vars to providers, so embedder settings live in config.
-        for key, var in (("embed", "TERESIS_EMBED"), ("embed_model", "TERESIS_EMBED_MODEL"), ("embed_url", "TERESIS_EMBED_URL")):
+        for key, var in (("embed", "TERESIS_EMBED"), ("embed_model", "TERESIS_EMBED_MODEL"),
+                         ("embed_url", "TERESIS_EMBED_URL"), ("rerank", "TERESIS_RERANK"),
+                         ("rerank_model", "TERESIS_RERANK_MODEL")):
             if str(self._config.get(key) or "").strip():
                 os.environ[var] = str(self._config[key]).strip()
-        self._store = MemoryStore(self._db_path(hermes_home))
+        try:  # the reranker is optional: a missing fastembed install must not break the provider
+            reranker = _embed.reranker_from_env()
+        except Exception as exc:
+            log.warning("teresis reranker unavailable (%s); continuing without rerank", exc)
+            reranker = None
+        self._store = MemoryStore(self._db_path(hermes_home), reranker=reranker)
         self._server = Server(self._store, default_scope=self._read_scopes)
 
     def shutdown(self) -> None:
@@ -178,6 +189,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         try:
             k = int(self._config.get("prefetch_k", 6))
             budget = int(self._config.get("prefetch_budget_tokens", 700))
+            query = _secrets.redact_secrets(query)[0]  # keep raw secrets out of remote embedder calls
             facts = self._store.recall(query, scope=self._read_scopes, k=k, budget_tokens=budget,
                                        exclude_kinds=["episode"])
             facts = [m for m in facts if (m.score or 0) >= 0.15]
@@ -237,6 +249,9 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
 
     def _write_or_skip(self, content: str, **kw) -> bool:
         """remember() unless it duplicates an existing memory; revise in place if it supersedes one."""
+        content, _ = _secrets.redact_secrets(content)  # belt: store.remember scrubs too
+        if not content.strip():
+            return False
         hit = self._near_dup(content)
         if hit and hit[0] == "dup":
             return False
@@ -266,6 +281,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             return
         user_content = user_content if isinstance(user_content, str) else str(user_content or "")
         assistant_content = assistant_content if isinstance(assistant_content, str) else str(assistant_content or "")
+        user_content = _secrets.redact_secrets(user_content)[0]
+        assistant_content = _secrets.redact_secrets(assistant_content)[0]
         try:
             if _truthy(self._config.get("capture_turns", True)) and not _is_trivial(user_content):
                 who = (turn_author or {}).get("name") or "User"
@@ -288,6 +305,11 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         scope = "user" if target == "user" else self._scope
         kind = "preference" if target == "user" else "fact"
         prev = (metadata or {}).get("previous_content")
+        # Stored content is the redacted form, so scrub prev too for find()/update() to match.
+        if prev:
+            prev = _secrets.redact_secrets(prev)[0]
+        if content:
+            content = _secrets.redact_secrets(content)[0]
         try:
             if action == "add" and content:
                 self._write_or_skip(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool")
@@ -320,6 +342,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         if not (self._store and self._write_enabled and task):
             return
         try:
+            task, result = _secrets.redact_secrets(task)[0], _secrets.redact_secrets(result)[0]
             self._store.remember(
                 f"Delegated: {_trim(task, 300)}\nResult: {_trim(result, 600)}", scope=self._scope, kind="episode",
                 importance=0.3, ttl_days=float(self._config.get("episode_ttl_days", 30)) or None,
@@ -354,6 +377,9 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
              "default": ""},
             {"key": "embed_model", "description": "Embedding model name, e.g. all-minilm.", "default": ""},
             {"key": "embed_url", "description": "Embedder base URL. Empty = http://localhost:11434 for ollama.", "default": ""},
+            {"key": "rerank", "description": "Cross-encoder reranker: fastembed. Empty = off (or TERESIS_RERANK env). "
+             "Needs `pip install fastembed`; falls back gracefully if missing.", "default": ""},
+            {"key": "rerank_model", "description": "Reranker model name.", "default": "Xenova/ms-marco-MiniLM-L-6-v2"},
             {"key": "capture_turns", "description": "Store each turn as a short-lived episode.", "type": "boolean",
              "default": True},
             {"key": "auto_extract", "description": "Save stated preferences/decisions automatically.",

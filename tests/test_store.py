@@ -222,6 +222,77 @@ class StoreTests(unittest.TestCase):
         s.close()
 
 
+class SecretScrubTests(unittest.TestCase):
+    """remember()/update() rewrite credential-looking spans to [REDACTED:<kind>] so raw
+    secrets are never persisted. MCP tools are covered too: they call remember()."""
+
+    def setUp(self):
+        self.d = tempfile.TemporaryDirectory()
+        self.s = MemoryStore(Path(self.d.name) / "m.db", embedder=None)
+
+    def tearDown(self):
+        self.s.close()
+        self.d.cleanup()
+
+    def test_remember_redacts_provider_token(self):
+        key = "sk-" + "a1" * 25
+        r = self.s.remember(f"Deploy uses OPENAI_API_KEY={key} on the worker", scope="p")
+        self.assertEqual(r.redacted, ["openai_key"])
+        stored = self.s.get(r.id).content
+        self.assertNotIn(key, stored)
+        self.assertIn("[REDACTED:openai_key]", stored)
+        self.assertIn("Deploy uses", stored)  # surrounding fact preserved
+
+    def test_remember_redacts_pem_and_env_assignment(self):
+        pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIblah\n-----END RSA PRIVATE KEY-----"
+        r = self.s.remember(f"cert is {pem} and TOKEN=abcdef0123456789abcdef", scope="p")
+        stored = self.s.get(r.id).content
+        self.assertNotIn("MIIblah", stored)
+        self.assertNotIn("abcdef0123456789abcdef", stored)
+        self.assertIn("[REDACTED:private_key]", stored)
+        self.assertIn("TOKEN=[REDACTED:env_secret]", stored)
+        self.assertEqual(r.redacted, ["private_key", "env_secret"])
+
+    def test_scrub_secrets_disabled_stores_verbatim(self):
+        key = "sk-" + "z9" * 25
+        r = self.s.remember(f"debug fixture key {key}", scope="p", scrub_secrets=False)
+        self.assertEqual(r.redacted, [])
+        self.assertIn(key, self.s.get(r.id).content)
+
+    def test_update_scrubs_new_content(self):
+        a = self.s.remember("Editor is VS Code", scope="u", key="u.editor")
+        token = "ghp_" + "Q7" * 20
+        r = self.s.update(a.id, f"Editor token is {token}")
+        stored = self.s.get(r.id).content
+        self.assertNotIn(token, stored)
+        self.assertIn("[REDACTED:github_token]", stored)
+
+    def test_ordinary_dev_facts_untouched(self):
+        facts = [
+            "Service port is 4000",
+            "The docs live at https://example.com/docs/page.html",
+            "DB url is postgres://localhost:5432/appdb",
+            "Clone with ssh://git@github.com/org/repo.git",
+            "Released commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+            "Run id 9b2e4c5a-1234-5678-9abc-def012345678 finished",
+            "API_KEY=your-api-key-here goes in .env",
+            "TOKEN=$HOME is read from the environment",
+        ]
+        for f in facts:
+            r = self.s.remember(f, scope="p")
+            self.assertEqual(r.redacted, [], f)
+            self.assertEqual(self.s.get(r.id).content, f)
+
+    def test_mcp_remember_scrubs(self):
+        srv = Server(self.s, "p")
+        token = "ghp_" + "w5" * 20
+        text, _ = srv.call_tool("memory_remember", {"content": f"pat is {token}"})
+        self.assertIn("created", text)
+        hits = self.s.recall("pat", scope="p")
+        self.assertTrue(hits)
+        self.assertNotIn(token, hits[0].content)
+
+
 class McpTests(unittest.TestCase):
     def test_protocol_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:

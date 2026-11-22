@@ -24,10 +24,31 @@ _RULES: list[tuple[str, float, list[re.Pattern]]] = [
         re.compile(r"\b(?:always|never|don't ever|do not ever)\s+\w+", re.I),
         re.compile(r"\bfrom now on\b", re.I),
         re.compile(r"\bmake sure (?:to|you)\b", re.I),
+        # build / test / ops runbook statements
+        re.compile(r"\brun\s+`?[\w./-]+`?(?:\s+`?[\w./-]+`?){0,3}\s+to\s+"
+                   r"(?:test|build|lint|verify|deploy|check|format)\b", re.I),
+        re.compile(r"\bdeploy(?:s|ed|ing)?\s+(?:[\w-]+\s+)?(?:with|via|using|through)\b", re.I),
+        re.compile(r"\btests?\s+(?:are\s+)?(?:live|lives|kept|found|located|reside)\b", re.I),
+        re.compile(r"\btests?\s+(?:are|is)\s+(?:in|inside|under)\s+(?:the\s+)?"
+                   r"[\w./~-]*(?:test|spec|e2e|unit|integration)[\w./~-]*", re.I),
     ]),
     ("fact", 0.6, [
         re.compile(r"\b(?:my|our)\s+(?:[\w-]+\s+){1,3}(?:is|are)\s+(?:called|named|at|on|hosted|located)\b", re.I),
         re.compile(r"\b(?:my|our)\s+(?:[\w-]+\s+){0,3}(?:port|host|url|endpoint|database|db|repo|branch)\s+(?:is|are)\b", re.I),
+    ]),
+    ("decision", 0.75, [
+        # migration / replacement statements: "switched from X to Y", "use X instead of Y" ...
+        re.compile(r"\b(?:switched|migrated|moved|upgraded|downgraded)\s+"
+                   r"(?:[\w./-]+\s+){0,4}(?:from|to|over)\b", re.I),
+        re.compile(r"\breplaced\s+[\w./-]+(?:\s+[\w./-]+){0,3}\s+with\b", re.I),
+        re.compile(r"\buse\s+[\w./-]+(?:\s+[\w./-]+){0,3}\s+instead\s+of\b", re.I),
+        re.compile(r"\b(?:stopped|quit|dropped)\s+using\b|\bno\s+longer\s+us(?:e|ing)\b", re.I),
+    ]),
+    ("fact", 0.65, [
+        # tool / stack conventions (the project variant below stays a decision at 0.7)
+        re.compile(r"\b(?:this|the|our)\s+(?:repo|repository|codebase|stack|service|app|workspace|monorepo)"
+                   r"\s+(?:uses?|runs?|requires?)\b", re.I),
+        re.compile(r"\bwe\s+run\s+[\w./-]+(?:\s+[\w./-]+){0,3}\s+(?:on|in|with|for)\b", re.I),
     ]),
     ("decision", 0.7, [
         re.compile(r"\bwe(?:'ve| have)?\s+(?:decided|agreed|chose|settled on|are going with)\b", re.I),

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
 
 from . import embed as _embed
+from . import secrets as _secrets
 from . import temporal as _temporal
 from . import text as T
 
@@ -142,6 +143,7 @@ class RememberResult:
     id: str
     status: str  # created | duplicate | superseded | refined
     replaced: list[str] = field(default_factory=list)
+    redacted: list[str] = field(default_factory=list)  # secret kinds scrubbed from content
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -265,6 +267,7 @@ class MemoryStore:
         source: str | None = None,
         meta: dict[str, Any] | None = None,
         replaces: str | None = None,
+        scrub_secrets: bool = True,
     ) -> RememberResult:
         """Store a memory. Dedupes exact/near repeats and supersedes stale values.
 
@@ -272,10 +275,18 @@ class MemoryStore:
         * Same ``key`` in scope (e.g. ``user.editor``) -> old value is superseded, history kept.
         * Near-duplicate that the new text strictly refines -> old one superseded ("refined").
         * ``replaces=<id>`` -> explicit supersession.
+        * ``scrub_secrets`` (default on) rewrites credential-looking spans to
+          ``[REDACTED:<kind>]`` before anything is hashed, embedded or persisted, so raw
+          secrets never reach SQLite or a remote embedder.
         """
         content = (content or "").strip()
         if not content:
             raise ValueError("content must be non-empty")
+        redacted: list[str] = []
+        if scrub_secrets:
+            content, redacted = _secrets.redact_secrets(content)
+            if redacted:
+                log.warning("memory content contained %s; stored redacted", ", ".join(redacted))
         scope = scope.strip("/") or "global"
         importance = min(1.0, max(0.0, float(importance)))
         tag_str = " ".join(dict.fromkeys(t.strip().lower().replace(" ", "-") for t in tags if t.strip()))
@@ -302,7 +313,7 @@ class MemoryStore:
                     " pinned=max(pinned, ?) WHERE id=?",
                     [now, importance, int(pinned), dup["id"]],
                 )
-                return RememberResult(dup["id"], "duplicate")
+                return RememberResult(dup["id"], "duplicate", redacted=redacted)
 
             new_id = uuid.uuid4().hex[:16]
             replaced: list[str] = []
@@ -336,7 +347,7 @@ class MemoryStore:
                     "INSERT INTO vectors(memory_id, model, vec) VALUES (?,?,?)", [new_id, self.embedder.name, vec]
                 )
         status = "created" if not replaced else ("refined" if refined else "superseded")
-        return RememberResult(new_id, status, replaced)
+        return RememberResult(new_id, status, replaced, redacted)
 
     def _near_duplicate(self, c, content, scope, kind, active, active_params):
         q = T.fts_query(content)
@@ -361,7 +372,8 @@ class MemoryStore:
                 return row, "refine"
         return None
 
-    def update(self, memory_id: str, content: str | None = None, **changes: Any) -> RememberResult:
+    def update(self, memory_id: str, content: str | None = None, *, scrub_secrets: bool = True,
+               **changes: Any) -> RememberResult:
         """Revise a memory. Content changes create a new version (history preserved)."""
         old = self.get(memory_id)
         if old is None or old.superseded_by or old.deleted_at:
@@ -396,6 +408,7 @@ class MemoryStore:
             source=changes.get("source", old.source),
             meta={**old.meta, **changes.get("meta", {})},
             replaces=None if old.key else memory_id,
+            scrub_secrets=scrub_secrets,
         )
         return res
 

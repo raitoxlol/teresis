@@ -17,3 +17,12 @@ dist/
 .venv-bench/
 .venv-bench312/
 .venv-tam/
+
+# Wheel/build artifacts
+build/
+*.egg-info/
+
+# Impeccable review artifacts (screenshots, surfaces, questions)
+.impeccable/review/
+.impeccable/surfaces/
+.impeccable/questions/
