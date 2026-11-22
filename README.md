@@ -146,6 +146,44 @@ How to read it:
 Reproduce: download `locomo10.json` from the LoCoMo repo to `.data/`, then
 `python bench/locomo.py --data .data/locomo10.json --system <naive|teresis|teresis-emb|holographic|mem0>`.
 
+## Live in Hermes
+
+The two benchmarks above score retrieval. `bench/hermes_live.py` runs a real Hermes agent end to end
+(`gpt-6.1-terra`, medium reasoning, fast mode off) with one fresh process per session. Facts are told
+in earlier sessions, then each question is asked in a new session with nothing restated. Grading is
+string match, with no LLM judge. The comparison is Hermes with Teresis against stock Hermes with only
+its built-in memory file.
+
+200 facts were told, 5 per session: 120 direct facts (ports, IPs, versions), 40 where the question
+shares only the project name with the fact, 20 preferences and 20 that later change value. 100
+questions were asked, including all 20 changed values and 10 about things never told.
+
+| | Teresis | Stock Hermes |
+| --- | --- | --- |
+| Total | **100/100** | 60/100 |
+| Direct facts (40) | 40 | 21 |
+| Paraphrased questions (20) | 20 | 13 |
+| Preferences (10) | 10 | 3 |
+| Changed values, newest must win (20) | 20 | 13 |
+| Never told, must say so (10) | 10 | 10 |
+| Median answer time | 12.0 s | 10.4 s |
+
+With 200 facts the built-in memory file (3,200 characters) overflows. Stock Hermes answers "I don't
+know" for what it lost, or gives the old value of a changed fact. It never invented an answer.
+Lookup in the Teresis store took a median of 6.6 ms (p95 8.5 ms) over 520 KB, and the answer was in
+the injected context for all 30 questions sampled.
+
+Caveats:
+- A 30-fact version of the same run was a tie (29/30 each). The built-in memory file holds that many,
+  so the gap only appears once memory outgrows it.
+- Both arms ran the same questions with seed 42. One run per arm, so there is no variance estimate.
+- The embedding variant did not run: Hermes does not forward `TERESIS_EMBED*` env vars to
+  providers, so that arm stored no vectors. Set `embed` and `embed_model` under `plugins.teresis`
+  instead. Even without embeddings Teresis scored 100%, because every question here contains the
+  project name, so this run cannot show what embeddings add.
+- Answers were re-graded once after fixing the grader: "4,249" now matches `4249`, and "I don't
+  remember" counts as a refusal. It applied to every arm, and the results files say so.
+
 ## Built-in benchmark
 
 `teresis bench` runs 35 queries over 34 target memories hidden among 2,000 distractors. The queries
