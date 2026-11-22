@@ -1,221 +1,321 @@
-import type {ReactNode} from 'react';
-import {Layout} from '@astryxdesign/core/Layout';
-import {VStack} from '@astryxdesign/core/VStack';
-import {HStack} from '@astryxdesign/core/HStack';
-import {Grid} from '@astryxdesign/core/Grid';
-import {Card} from '@astryxdesign/core/Card';
-import {Section} from '@astryxdesign/core/Section';
-import {Text} from '@astryxdesign/core/Text';
-import {Heading} from '@astryxdesign/core/Heading';
-import {Button} from '@astryxdesign/core/Button';
-import {Link} from '@astryxdesign/core/Link';
-import {CodeBlock} from '@astryxdesign/core/CodeBlock';
-import {Table} from '@astryxdesign/core/Table';
-import {Mark} from './assets/Mark';
-import {HeroArt} from './assets/HeroArt';
-import {LocalGlyph, Ornament, RetrievalGlyph, ScopesGlyph, WritesGlyph} from './assets/Glyphs';
-import {BarList} from './components/BarList';
-import {LIVE_BY_KIND, LIVE_TOTAL, LOCOMO, LONGMEMEVAL, PILLARS, REPO, SNIPPETS} from './content';
+import {useEffect, useRef, useState} from 'react';
+import {Bars} from './components/Bars';
+import {GridLayer} from './components/GridLayer';
+import {Lotus, Mark} from './components/Lotus';
+import {Waitlist} from './components/Waitlist';
+import {FAQ, HERO, LIVE_BY_KIND, LIVE_METHOD, LIVE_TOTAL, LOCOMO, LONGMEMEVAL, SNIPPETS, STEPS, type Step} from './content';
 
-const GLYPHS: Record<string, ReactNode> = {
-  writes: <WritesGlyph />,
-  scopes: <ScopesGlyph />,
-  retrieval: <RetrievalGlyph />,
-  local: <LocalGlyph />,
-};
+type Tab = keyof typeof SNIPPETS;
+const TABS = Object.keys(SNIPPETS) as Tab[];
 
-function SectionHead({id, title, children}: {id: string; title: string; children: ReactNode}) {
+function Install({compact = false}: {compact?: boolean}) {
+  const [tab, setTab] = useState<Tab>('Hermes');
+  const [copied, setCopied] = useState(false);
+  const code = compact ? SNIPPETS[tab].split('\n')[0] : SNIPPETS[tab];
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(SNIPPETS[tab]);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard blocked: the code stays selectable */
+    }
+  };
   return (
-    <VStack gap={3} hAlign="center" id={id}>
-      <Ornament />
-      <Heading level={2} type="display-3" justify="center" textWrap="balance">
-        {title}
-      </Heading>
-      <Text type="large" color="secondary" justify="center" textWrap="balance">
-        {children}
-      </Text>
-    </VStack>
-  );
-}
-
-function Header() {
-  return (
-    <HStack hAlign="between" vAlign="center" paddingBlock={3} paddingInline={4} gap={4}>
-      <HStack gap={3} vAlign="center">
-        <Mark height={40} title="Teresis" />
-        <Text type="large" weight="semibold">
-          Teresis
-        </Text>
-      </HStack>
-      <HStack gap={1} vAlign="center">
-        <Button label="Results" variant="ghost" size="sm" href="#results" />
-        <Button label="Install" variant="ghost" size="sm" href="#install" />
-        <Button label="Source" variant="secondary" size="sm" href={REPO} />
-      </HStack>
-    </HStack>
-  );
-}
-
-function Hero() {
-  return (
-    <VStack gap={8} hAlign="center" paddingBlockStart={6}>
-      <VStack gap={4} hAlign="center">
-        <Text type="label" color="accent" weight="semibold">
-          τήρησις · faithful keeping
-        </Text>
-        <Heading level={1} type="display-1" justify="center" textWrap="balance">
-          Local memory for AI agents
-        </Heading>
-        <Text type="large" color="secondary" justify="center" textWrap="balance">
-          One SQLite file, no dependencies. A Hermes memory provider, an MCP server, a local HTTP API, a CLI and a
-          Python API, all sharing the same store.
-        </Text>
-      </VStack>
-      <HStack gap={3}>
-        <Button label="See the results" variant="primary" size="lg" href="#results" />
-        <Button label="Install in Hermes" variant="secondary" size="lg" href="#install" />
-      </HStack>
-      <VStack maxWidth={680} width="100%">
-        <CodeBlock code={SNIPPETS.hermes} language="bash" title="Hermes" />
-      </VStack>
-      <VStack width="100%">
-        <HeroArt />
-      </VStack>
-    </VStack>
-  );
-}
-
-function ResultCard({title, subtitle, children}: {title: string; subtitle: string; children: ReactNode}) {
-  return (
-    <Card padding={6}>
-      <VStack gap={5}>
-        <VStack gap={1}>
-          <Heading level={3} weight="semibold">
-            {title}
-          </Heading>
-          <Text type="supporting" color="secondary">
-            {subtitle}
-          </Text>
-        </VStack>
-        {children}
-      </VStack>
-    </Card>
-  );
-}
-
-function Results() {
-  return (
-    <VStack gap={8}>
-      <SectionHead id="results" title="Measured, not described">
-        Two retrieval benchmarks with the same defaults, and a live agent answering from memory.
-      </SectionHead>
-      <ResultCard title="A live Hermes agent" subtitle="200 facts told in earlier sessions, 100 questions asked in fresh ones. Questions answered correctly.">
-        <Grid columns={{minWidth: 420, repeat: 'fit'}} gap={8} align="center">
-          <BarList rows={LIVE_TOTAL} max={100} metric="correct" />
-          <Table
-            density="compact"
-            idKey="kind"
-            data={LIVE_BY_KIND}
-            columns={[
-              {key: 'kind', header: 'Question type'},
-              {key: 'teresis', header: 'Teresis', align: 'end', renderCell: (r) => `${r.teresis}/${r.asked}`},
-              {key: 'stock', header: 'Stock Hermes', align: 'end', renderCell: (r) => `${r.stock}/${r.asked}`},
-            ]}
-          />
-        </Grid>
-      </ResultCard>
-      <Grid columns={{minWidth: 440, repeat: 'fit'}} gap={6}>
-        <ResultCard title="LoCoMo" subtitle="1,536 questions over 10 long conversations. Share of questions with the exact evidence turn in the top 5 (recall_any@5).">
-          <BarList rows={LOCOMO} max={1} metric="recall_any@5" />
-        </ResultCard>
-        <ResultCard title="LongMemEval-S" subtitle="100 held-out questions over ~50-session histories. Ranking quality of the evidence sessions (NDCG@10).">
-          <BarList rows={LONGMEMEVAL} max={1} metric="NDCG@10" />
-        </ResultCard>
-      </Grid>
-      <VStack gap={2} hAlign="center">
-        <Text type="supporting" color="secondary" justify="center" textWrap="balance">
-          The live run is one pass per arm on gpt-6.1-terra, medium reasoning, fast mode off. A 30-fact version tied: the gap
-          appears once memory outgrows Hermes' built-in 3,200-character file. mem0 ran with infer=False and without its
-          optional BM25 and spaCy extras. The two benchmarks score retrieval, not answer generation.
-        </Text>
-        <Link href={REPO} isExternalLink label="Methodology and raw results in the repository">
-          Methodology and raw results
-        </Link>
-      </VStack>
-    </VStack>
-  );
-}
-
-function How() {
-  return (
-    <VStack gap={8}>
-      <SectionHead id="how" title="Built around the write path">
-        Agents write constantly, repeat themselves, and change their minds. Teresis is designed for that as much as for
-        search.
-      </SectionHead>
-      <Grid columns={{minWidth: 480, repeat: 'fit'}} gap={6}>
-        {PILLARS.map((p) => (
-          <Card key={p.key} padding={6}>
-            <VStack gap={4}>
-              {GLYPHS[p.key]}
-              <Heading level={3} weight="semibold">
-                {p.title}
-              </Heading>
-              <Text color="secondary">{p.body}</Text>
-            </VStack>
-          </Card>
+    <div className={`install${compact ? ' compact' : ''}`}>
+      <div className="tabs" role="tablist" aria-label="Install preview">
+        {TABS.map((t) => (
+          <button key={t} role="tab" aria-selected={t === tab} className={t === tab ? 'on' : ''} onClick={() => setTab(t)}>
+            {t}
+          </button>
         ))}
-      </Grid>
-    </VStack>
+      </div>
+      <div className="code">
+        <pre>
+          <code>
+            {code.split('\n').map((line, i) => (
+              <span className="ln" key={i}>
+                {line}
+              </span>
+            ))}
+          </code>
+        </pre>
+        {!compact && (
+          <button className="copy" onClick={copy}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        )}
+      </div>
+      <p className="note">Install preview, for early-access users.</p>
+    </div>
   );
 }
 
-function Install() {
-  return (
-    <VStack gap={8}>
-      <SectionHead id="install" title="One store, every client">
-        Hermes, MCP clients, plain HTTP and Python all read and write the same file.
-      </SectionHead>
-      <Grid columns={{minWidth: 520, repeat: 'fit'}} gap={6}>
-        <CodeBlock code={SNIPPETS.hermes} language="bash" title="Hermes Agent" width="100%" isWrapped />
-        <CodeBlock code={SNIPPETS.mcp} language="bash" title="MCP (Claude Code, Codex, Cursor)" width="100%" isWrapped />
-        <CodeBlock code={SNIPPETS.http} language="bash" title="HTTP" width="100%" isWrapped />
-        <CodeBlock code={SNIPPETS.python} language="python" title="Python" width="100%" isWrapped />
-      </Grid>
-    </VStack>
-  );
+function Demo({kind}: {kind: Step['demo']}) {
+  switch (kind) {
+    case 'remember':
+      return (
+        <div className="demo">
+          <pre>
+            <code>
+              <span className="k">m</span>.remember(<span className="s">"Editor is Neovim"</span>, scope=<span className="s">"user"</span>,
+              {'\n           '}key=<span className="s">"user.editor"</span>)
+            </code>
+          </pre>
+          <p className="out">created · ~/.local/share/teresis/memory.db</p>
+        </div>
+      );
+    case 'supersede':
+      return (
+        <ol className="demo timeline">
+          <li className="old">
+            <span>Editor is VS Code</span>
+            <em>superseded</em>
+          </li>
+          <li className="cur">
+            <span>Editor is Neovim</span>
+            <em>current · key user.editor</em>
+          </li>
+          <li className="dup">
+            <span>Editor is Neovim</span>
+            <em>repeated · reinforced, no new row</em>
+          </li>
+        </ol>
+      );
+    case 'scopes':
+      return (
+        <ul className="demo scopes">
+          <li className="yes">global</li>
+          <li className="yes i1">project/atlas</li>
+          <li className="from i2">project/atlas/agent-x · recalling</li>
+          <li className="no i1">project/helios · sibling, never read</li>
+        </ul>
+      );
+    case 'channels':
+      return (
+        <div className="demo">
+          <p className="q">
+            recall(<span className="s">"postgress"</span>)
+          </p>
+          <ul className="hits">
+            <li>
+              <b>trigram</b> Atlas migrated its database to PostgreSQL 16
+            </li>
+            <li>
+              <b>BM25</b> stemmed keyword match, ranked by field weight
+            </li>
+            <li>
+              <b>vectors</b> optional, for paraphrased questions
+            </li>
+          </ul>
+        </div>
+      );
+    case 'local':
+      return (
+        <ul className="demo rows">
+          <li>
+            <span>recall p50 · no model (LoCoMo)</span>
+            <b>8.4 ms</b>
+          </li>
+          <li>
+            <span>network calls by default</span>
+            <b>0</b>
+          </li>
+          <li>
+            <span>processes writing at once (test suite)</span>
+            <b>4</b>
+          </li>
+        </ul>
+      );
+  }
 }
 
-function Footer() {
+function Story() {
+  const [step, setStep] = useState(1);
+  const [drawn, setDrawn] = useState(false);
+  const refs = useRef<(HTMLElement | null)[]>([]);
+  const plateRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) setStep(Number((e.target as HTMLElement).dataset.step));
+        }
+      },
+      {rootMargin: '-45% 0px -45% 0px'},
+    );
+    refs.current.forEach((el) => el && io.observe(el));
+    const enter = new IntersectionObserver(([e]) => e.isIntersecting && setDrawn(true), {threshold: 0.3});
+    if (plateRef.current) enter.observe(plateRef.current);
+    return () => {
+      io.disconnect();
+      enter.disconnect();
+    };
+  }, []);
+  const caption = step >= 6 ? 'The lotus, complete: five things it keeps' : `${step} of 5 · ${STEPS[step - 1].title.replace(/\.$/, '')}`;
   return (
-    <VStack gap={3} hAlign="center" paddingBlock={8} paddingInline={4}>
-      <Ornament />
-      <Text color="secondary" justify="center">
-        Teresis · τήρησις, faithful keeping
-      </Text>
-      <Link href={REPO} isExternalLink label="Teresis source repository">
-        Source
-      </Link>
-    </VStack>
+    <section className="story" id="how" aria-label="How Teresis keeps memory">
+      <div className={`story-plate${drawn ? ' drawn' : ''}`} ref={plateRef}>
+        <Lotus step={step} grid pad={0.3} />
+        <p className="plate-cap" aria-live="polite">
+          {caption}
+        </p>
+      </div>
+      <ol className="story-steps">
+        {STEPS.map((s, i) => (
+          <li key={s.title} data-step={i + 1} ref={(el) => void (refs.current[i] = el)} className={step === i + 1 ? 'active' : ''}>
+            <span className="num" aria-hidden="true">
+              {i + 1}
+            </span>
+            <h3>{s.title}</h3>
+            <p>{s.body}</p>
+            <Demo kind={s.demo} />
+          </li>
+        ))}
+        <li className="story-end" data-step={6} ref={(el) => void (refs.current[STEPS.length] = el)} aria-hidden="true" />
+      </ol>
+    </section>
   );
 }
 
 export function App() {
-  return (
-    <Layout
-      height="auto"
-      contentWidth={1120}
-      padding={4}
-      header={<Header />}
-      content={
-        <VStack gap={10} paddingBlockEnd={6} paddingInline={4}>
-          <Hero />
-          <Results />
-          <How />
-          <Install />
-        </VStack>
+  const lotusRef = useRef<SVGSVGElement>(null);
+  const slipRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLElement>(null);
+  const [showBar, setShowBar] = useState(false);
+
+  useEffect(() => {
+    const seen = {slip: true, close: false};
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.target === slipRef.current) seen.slip = e.isIntersecting;
+        if (e.target === closeRef.current) seen.close = e.isIntersecting;
       }
-      footer={<Footer />}
-    />
+      setShowBar(!seen.slip && !seen.close);
+    });
+    if (slipRef.current) io.observe(slipRef.current);
+    if (closeRef.current) io.observe(closeRef.current);
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <>
+      <header className="hero">
+        <GridLayer anchor={lotusRef} />
+        <nav className="nav" aria-label="Main">
+          <a className="brand" href="#top" aria-label="Teresis home">
+            <Mark />
+            <span>Teresis</span>
+          </a>
+          <div className="links">
+            <a href="#how">How it keeps</a>
+            <a href="#proof">Benchmarks</a>
+            <a href="#install">Install</a>
+          </div>
+          <a className="pill" href="#join">
+            Join the waitlist
+          </a>
+        </nav>
+        <div className="hero-copy" id="top">
+          <h1>
+            {HERO.line1}
+            <br />
+            <span className="keeps">{HERO.line2}</span>
+          </h1>
+          <p className="sub">{HERO.sub}</p>
+        </div>
+        <Lotus svgRef={lotusRef} intro pad={0.08} className="hero-lotus" />
+        <div className="slip" ref={slipRef}>
+          <Waitlist id="email-hero" />
+          <Install compact />
+          <p className="proof-line">
+            Live Hermes test: <b>{HERO.proof.teresis}</b> with Teresis, {HERO.proof.stock} with stock memory.
+          </p>
+        </div>
+      </header>
+
+      <main>
+        <Story />
+
+        <section className="proof" id="proof">
+          <div className="wrap">
+            <h2>100 out of 100 on a live Hermes test.</h2>
+            <p className="lede">{LIVE_METHOD}</p>
+            <Bars rows={LIVE_TOTAL} max={100} caption="Questions answered correctly, out of 100" />
+            <table className="kinds">
+              <caption>By kind of question</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Kind</th>
+                  <th scope="col">Asked</th>
+                  <th scope="col">Teresis</th>
+                  <th scope="col">Stock Hermes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {LIVE_BY_KIND.map((k) => (
+                  <tr key={k.kind}>
+                    <th scope="row">{k.kind}</th>
+                    <td>{k.asked}</td>
+                    <td className="t">{k.teresis}</td>
+                    <td>{k.stock}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <h3>And on public benchmarks.</h3>
+            <div className="bench">
+              <Bars rows={LONGMEMEVAL} max={1} caption="LongMemEval · ranking quality (NDCG@10) · median query time" />
+              <Bars rows={LOCOMO} max={1} caption="LoCoMo · evidence in the top 5 (recall@5) · median query time" />
+            </div>
+            <p className="fine">Retrieval only, on the public datasets. Higher is better.</p>
+          </div>
+        </section>
+
+        <section className="installs" id="install">
+          <div className="wrap">
+            <h2>Plugs into what you already run.</h2>
+            <p className="lede">A native Hermes memory provider, an MCP server, a local HTTP API and a Python API, all sharing one store.</p>
+            <Install />
+          </div>
+        </section>
+
+        <section className="faq" aria-labelledby="faq-h">
+          <div className="wrap">
+            <h2 id="faq-h">Questions</h2>
+            {FAQ.map((f) => (
+              <details key={f.q}>
+                <summary>{f.q}</summary>
+                <p>{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        <section className="close" id="join" ref={closeRef}>
+          <div className="wrap">
+            <Mark className="close-mark" />
+            <h2>Keep what your agents learn.</h2>
+            <p className="lede">Teresis is in private early access.</p>
+            <Waitlist id="email-close" />
+          </div>
+        </section>
+      </main>
+
+      <footer className="foot">
+        <Mark />
+        <span>
+          τήρησις <i>·</i> faithful keeping
+        </span>
+        <span className="c">© 2026 Teresis</span>
+      </footer>
+
+      <div className={`bar${showBar ? ' show' : ''}`} aria-hidden={!showBar} inert={!showBar}>
+        <span className="bar-t">
+          <Mark /> Teresis is in private early access.
+        </span>
+        <Waitlist id="email-bar" compact />
+      </div>
+    </>
   );
 }

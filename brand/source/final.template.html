@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teresis Mark</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--foreground, #ededed); font-family: var(--font-sans, system-ui, -apple-system, sans-serif); }
+  h2 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+       color: var(--muted-foreground, #9a9a9a); margin: 20px 0 8px; }
+  h2:first-child { margin-top: 0; }
+  .paper { background: #fff; color: #000; border: 1px solid var(--border, #333); border-radius: var(--radius, 10px); }
+  .ink { background: #000; color: #fff; border: 1px solid var(--border, #333); border-radius: var(--radius, 10px); }
+  .top { display: grid; grid-template-columns: 1.25fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .top { grid-template-columns: 1fr; } }
+  .hero { padding: 16px; position: relative; }
+  .hero svg { width: 100%; height: auto; display: block; }
+  .gl { stroke: #dcdcdc; stroke-width: .5; fill: none; vector-effect: non-scaling-stroke; }
+  .hero.nogrid .gl { display: none; }
+  .tog { position: absolute; top: 10px; right: 10px; font: inherit; font-size: 11px; padding: 3px 9px;
+         border-radius: 999px; border: 1px solid #ccc; background: #fff; color: #000; cursor: pointer; }
+  .side { display: grid; grid-template-rows: auto auto; gap: 12px; }
+  .icons { display: flex; gap: 12px; align-items: flex-end; padding: 16px; flex-wrap: wrap; }
+  .icons figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .icons figcaption, .cap { font-size: 10.5px; font-family: var(--font-mono, ui-monospace, monospace); opacity: .6; }
+  .fav { display: flex; gap: 16px; align-items: center; padding: 14px 16px; }
+  .fav .pair { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 6px; }
+  .words { display: grid; gap: 12px; }
+  .word { display: grid; grid-template-columns: 1fr 1fr 0.62fr; gap: 10px; align-items: stretch; }
+  @media (max-width: 560px) { .word { grid-template-columns: 1fr; } }
+  .word > div { padding: 18px 16px; display: flex; align-items: center; justify-content: center; }
+  .word svg { width: 100%; height: auto; display: block; }
+  .word .st svg { max-width: 120px; }
+  .meta { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin: -4px 0 6px; font-size: 12px; }
+  .meta b { font-weight: 650; }
+  .meta span { color: var(--muted-foreground, #9a9a9a); }
+  .pick { font-size: 10.5px; border: 1px solid var(--foreground, #ededed); border-radius: 999px; padding: 1px 7px; }
+</style>
+</head>
+<body>
+<script>const D = /*DATA*/{};</script>
+<h2>Mark · L3 lotus fan · corner radius 4</h2>
+<div class="top">
+  <div class="paper hero" id="hero"><button class="tog" id="tg">Grid on</button></div>
+  <div class="side">
+    <div class="paper icons" id="icons"></div>
+    <div class="ink fav" id="fav"></div>
+  </div>
+</div>
+<h2>Wordmark · Jost 500</h2>
+<div class="words" id="words"></div>
+<script>
+const pad = 0.1;
+const vbox = (w, h, p = pad) => { const q = p * Math.max(w, h); return `${-q} ${-q} ${w + 2 * q} ${h + 2 * q}`; };
+const markSvg = (size, fill) =>
+  `<svg width="${size}" height="${size}" viewBox="${vbox(D.mw, D.mh, 0.06)}"><path fill="${fill}" d="${D.mark}"/></svg>`;
+
+// hero with construction grid
+const side = Math.max(D.mw, D.mh) * 1.25;
+document.getElementById("hero").insertAdjacentHTML("beforeend",
+  `<svg viewBox="${(D.mw - side) / 2} ${(D.mh - side) / 2} ${side} ${side}">
+     <g transform="translate(${D.gx} ${D.gy})"><path class="gl" d="${D.grid}"/></g>
+     <path fill="#000" d="${D.mark}"/></svg>`);
+const tg = document.getElementById("tg"), hero = document.getElementById("hero");
+tg.onclick = () => { hero.classList.toggle("nogrid"); tg.textContent = hero.classList.contains("nogrid") ? "Grid off" : "Grid on"; };
+
+// app icons
+const iconB = D.icon, iconW = D.icon.replace('fill="#000"/>', 'fill="#fff" stroke="#e2e2e2"/>').replace('fill="#fff"/></svg>', 'fill="#000"/></svg>');
+const sized = (svg, s) => svg.replace("<svg ", `<svg width="${s}" height="${s}" `);
+document.getElementById("icons").innerHTML =
+  `<figure>${sized(iconB, 88)}<figcaption>app icon</figcaption></figure>
+   <figure>${sized(iconW, 88)}<figcaption>light</figcaption></figure>
+   <figure>${sized(iconB, 44)}<figcaption>44</figcaption></figure>
+   <figure>${sized(iconB, 29)}<figcaption>29</figcaption></figure>`;
+document.getElementById("fav").innerHTML =
+  `<span class="cap">favicon, actual size</span>
+   <span class="pair" style="background:#fff">${markSvg(32, "#000")}${markSvg(16, "#000")}</span>
+   <span class="pair">${markSvg(32, "#fff")}${markSvg(16, "#fff")}</span>`;
+
+// wordmarks
+const lock = (L, fill) => `<svg viewBox="${vbox(L.w, L.h, 0.04)}"><g fill="${fill}">${L.mark}${L.word}</g></svg>`;
+const words = document.getElementById("words");
+D.words.forEach((w, i) => {
+  words.insertAdjacentHTML("beforeend", `
+    <div>
+      <div class="meta"><b>${w.name}</b><span>weight ${w.wght} · ${w.why}</span><span class="pick">locked</span></div>
+      <div class="word">
+        <div class="paper">${lock(w.h, "#000")}</div>
+        <div class="ink">${lock(w.h, "#fff")}</div>
+        <div class="paper st">${lock(w.v, "#000")}</div>
+      </div>
+    </div>`);
+});
+</script>
+</body>
+</html>

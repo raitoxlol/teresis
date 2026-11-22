@@ -1,0 +1,415 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-22T07:32:57+00:00",
+  "title": "Design System: Teresis",
+  "extensions": {
+    "colorMeta": {
+      "ochre": {
+        "role": "primary",
+        "displayName": "Manuscript Ochre",
+        "canonical": "oklch(77.5% 0.114 83.0)",
+        "tonalRamp": [
+          "#140800",
+          "#372000",
+          "#5c3b00",
+          "#805a00",
+          "#a37b23",
+          "#c49f57",
+          "#e2c58e",
+          "#feeccc"
+        ]
+      },
+      "ochre-bright": {
+        "role": "primary",
+        "displayName": "Burnished Ochre",
+        "canonical": "oklch(82.7% 0.105 84.5)",
+        "tonalRamp": [
+          "#130900",
+          "#352100",
+          "#593c00",
+          "#7c5b00",
+          "#9f7d2f",
+          "#c0a05e",
+          "#dfc693",
+          "#fcedcf"
+        ]
+      },
+      "ochre-deep": {
+        "role": "primary",
+        "displayName": "Tarnished Ochre",
+        "canonical": "oklch(60.9% 0.109 78.6)",
+        "tonalRamp": [
+          "#150800",
+          "#381f00",
+          "#5d3a00",
+          "#825800",
+          "#a57a2b",
+          "#c69e5b",
+          "#e4c491",
+          "#ffecce"
+        ]
+      },
+      "field": {
+        "role": "neutral",
+        "displayName": "Lotus-Leaf Field",
+        "canonical": "oklch(31.5% 0.054 163.8)",
+        "tonalRamp": [
+          "#030e09",
+          "#122b20",
+          "#284a3b",
+          "#446b59",
+          "#658d7a",
+          "#8aaf9d",
+          "#b4d1c3",
+          "#e2f3ea"
+        ]
+      },
+      "deep": {
+        "role": "neutral",
+        "displayName": "Pond Deep",
+        "canonical": "oklch(26.2% 0.043 164.8)",
+        "tonalRamp": [
+          "#050e09",
+          "#162a21",
+          "#2e493d",
+          "#4a695b",
+          "#6b8b7c",
+          "#8fad9f",
+          "#b8d0c4",
+          "#e4f2eb"
+        ]
+      },
+      "cream": {
+        "role": "neutral",
+        "displayName": "Vellum Cream",
+        "canonical": "oklch(93.5% 0.027 87.9)",
+        "tonalRamp": [
+          "#0d0b06",
+          "#29251b",
+          "#474134",
+          "#676150",
+          "#898271",
+          "#aba495",
+          "#cec9bc",
+          "#f1eee6"
+        ]
+      },
+      "sage": {
+        "role": "neutral",
+        "displayName": "Sage",
+        "canonical": "oklch(82.1% 0.038 140.2)",
+        "tonalRamp": [
+          "#080d07",
+          "#1e281c",
+          "#394736",
+          "#566753",
+          "#778873",
+          "#9aab97",
+          "#c0cebe",
+          "#e9f1e7"
+        ]
+      },
+      "pale-sage": {
+        "role": "neutral",
+        "displayName": "Pale Sage",
+        "canonical": "oklch(76.0% 0.041 141.7)",
+        "tonalRamp": [
+          "#070d07",
+          "#1d291c",
+          "#374735",
+          "#556752",
+          "#758972",
+          "#99ab96",
+          "#bfcebd",
+          "#e9f1e7"
+        ]
+      },
+      "mute": {
+        "role": "neutral",
+        "displayName": "Lichen",
+        "canonical": "oklch(65.8% 0.046 152.3)",
+        "tonalRamp": [
+          "#060d07",
+          "#192a1d",
+          "#314837",
+          "#4e6955",
+          "#6e8b75",
+          "#93ad99",
+          "#bad0bf",
+          "#e6f2e8"
+        ]
+      },
+      "error-text": {
+        "role": "error",
+        "displayName": "Rose Clay",
+        "canonical": "oklch(82.9% 0.070 38.6)",
+        "tonalRamp": [
+          "#150704",
+          "#391c13",
+          "#5e3629",
+          "#835344",
+          "#a77464",
+          "#c89889",
+          "#e7bfb2",
+          "#ffe9e1"
+        ]
+      },
+      "error-stroke": {
+        "role": "error",
+        "displayName": "Rose Clay (stroke)",
+        "canonical": "oklch(73.9% 0.112 34.8)",
+        "tonalRamp": [
+          "#1a0401",
+          "#431307",
+          "#6d2a1a",
+          "#954733",
+          "#bb6854",
+          "#dc8e7a",
+          "#f7b7a7",
+          "#ffe4da"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Etched Rule",
+        "canonical": "rgba(217, 175, 91, 0.22)",
+        "tonalRamp": [
+          "#140800",
+          "#372000",
+          "#5c3b00",
+          "#805a00",
+          "#a37b23",
+          "#c49f57",
+          "#e2c58e",
+          "#feeccc"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero headline only; second sentence in ochre."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section heads, max 18ch."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Story steps and sub-heads."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text in Allo (opsz 14, ROND 100)."
+      },
+      "body-large": {
+        "displayName": "Lede",
+        "purpose": "Section ledes in Sage, max 62ch."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Captions, tabs, nav links, table heads; sentence case."
+      },
+      "wordmark": {
+        "displayName": "Wordmark",
+        "purpose": "Stand-in wordmark beside the mark until the grid wordmark is drawn."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Install commands and machine-output rows only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating-bar",
+        "value": "0 18px 40px -16px rgba(0, 0, 0, 0.6)",
+        "purpose": "Only the sticky waitlist bar, which floats over content."
+      },
+      {
+        "name": "focus-halo",
+        "value": "0 0 0 3px rgba(217, 175, 91, 0.25)",
+        "purpose": "Email field on focus."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-assemble",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Every transition and keyframe."
+      },
+      {
+        "name": "grid-draw",
+        "value": "clip-path circle 0 → farthest corner, 1.6s, from the lotus centre",
+        "purpose": "Hero grid draws on before petals land; story plate grid reveals on first view."
+      },
+      {
+        "name": "petal-assemble",
+        "value": "5.6s keyframes, 0.5s delay: centre, mid pair, outer pair; earlier petals ghost to 0.36 then return",
+        "purpose": "Hero lotus intro."
+      },
+      {
+        "name": "petal-state",
+        "value": "opacity + translateY(8%) scale(0.94), 0.6s",
+        "purpose": "Story petal off/new/ghost/on changes."
+      },
+      {
+        "name": "step-focus",
+        "value": "opacity 0.42 → 1, 0.5s",
+        "purpose": "Story step crossing mid-screen."
+      },
+      {
+        "name": "bar-slide",
+        "value": "translateY 140% → 0, 0.5s",
+        "purpose": "Sticky bar enter/exit."
+      },
+      {
+        "name": "control",
+        "value": "0.2s colour/border",
+        "purpose": "Button, link and input states."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "no animation; grid and lotus shown complete",
+        "purpose": "prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wide",
+        "value": "1080px"
+      },
+      {
+        "name": "stack",
+        "value": "860px"
+      },
+      {
+        "name": "narrow",
+        "value": "420px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one filled action: Join the waitlist.",
+      "html": "<button class=\"ds-btn-primary\">Join the waitlist</button>",
+      "css": ".ds-btn-primary { font-family: var(--sans, 'Allo', system-ui, sans-serif); font-size: 16px; font-weight: 500; height: 48px; padding: 0 22px; border: 0; border-radius: 999px; background: var(--ochre, #d9af5b); color: var(--deep, #0c2b1f); cursor: pointer; transition: background-color 0.2s var(--ease, cubic-bezier(0.16, 1, 0.3, 1)); } .ds-btn-primary:hover { background: #e6c174; } .ds-btn-primary:focus-visible { outline: 2px solid var(--ochre, #d9af5b); outline-offset: 3px; } .ds-btn-primary:disabled { opacity: 0.6; cursor: progress; }"
+    },
+    {
+      "name": "Ghost Button (Copy)",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Every secondary control: a hairline pill.",
+      "html": "<button class=\"ds-btn-ghost\">Copy</button>",
+      "css": ".ds-btn-ghost { font-family: var(--sans, 'Allo', system-ui, sans-serif); font-size: 13px; height: 34px; padding: 0 14px; border-radius: 999px; background: transparent; color: var(--cream, #f1e9d6); border: 1px solid var(--line, rgba(217,175,91,0.22)); cursor: pointer; transition: border-color 0.2s var(--ease, cubic-bezier(0.16, 1, 0.3, 1)), color 0.2s var(--ease, cubic-bezier(0.16, 1, 0.3, 1)); } .ds-btn-ghost:hover { border-color: var(--ochre, #d9af5b); color: var(--ochre, #d9af5b); } .ds-btn-ghost:focus-visible { outline: 2px solid var(--ochre, #d9af5b); outline-offset: 3px; }"
+    },
+    {
+      "name": "Waitlist Form",
+      "kind": "input",
+      "refersTo": "input-email",
+      "description": "Email pill plus the primary action; error stroke in Rose Clay.",
+      "html": "<form class=\"ds-wait\" onsubmit=\"return false\"><input class=\"ds-input\" type=\"email\" placeholder=\"you@studio.dev\" aria-label=\"Email\"><button class=\"ds-wait-btn\">Join the waitlist</button></form>",
+      "css": ".ds-wait { display: grid; grid-template-columns: minmax(0, 290px) auto; gap: 8px; align-items: center; justify-content: start; padding: 16px; background: var(--field, #123a2a); } .ds-input { box-sizing: border-box; font-family: var(--sans, 'Allo', system-ui, sans-serif); font-size: 16px; width: 100%; height: 48px; padding: 0 18px; border-radius: 999px; border: 1px solid rgba(217, 175, 91, 0.45); background: rgba(12, 43, 31, 0.55); color: var(--cream, #f1e9d6); transition: border-color 0.2s var(--ease, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow 0.2s var(--ease, cubic-bezier(0.16, 1, 0.3, 1)); } .ds-input::placeholder { color: #a3b8a0; } .ds-input:focus { outline: none; border-color: var(--ochre, #d9af5b); box-shadow: 0 0 0 3px rgba(217, 175, 91, 0.25); } .ds-input:user-invalid { border-color: #e8907a; } .ds-wait-btn { font-family: var(--sans, 'Allo', system-ui, sans-serif); font-size: 16px; font-weight: 500; height: 48px; padding: 0 22px; border: 0; border-radius: 999px; background: var(--ochre, #d9af5b); color: var(--deep, #0c2b1f); cursor: pointer; } .ds-wait-btn:hover { background: #e6c174; }"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "refersTo": "",
+      "description": "Mark + stand-in wordmark, sage links, the ochre waitlist pill.",
+      "html": "<nav class=\"ds-nav\"><svg class=\"ds-mark\" viewBox=\"0 0 156 135.1\" aria-hidden=\"true\"><path d=\"M74.54,6.00A4.00,4.00 0 0 1 81.46,6.00L101.46,40.64A4.00,4.00 0 0 1 102.00,42.64L102.00,82.07A4.00,4.00 0 0 1 101.46,84.07L81.46,118.71A4.00,4.00 0 0 1 74.54,118.71L54.54,84.07A4.00,4.00 0 0 1 54.00,82.07L54.00,42.64A4.00,4.00 0 0 1 54.54,40.64ZM36.00,79.67A4.00,4.00 0 0 0 42.00,76.21L42.00,43.88A4.00,4.00 0 0 0 40.00,40.41L12.00,24.25A4.00,4.00 0 0 0 6.00,27.71L6.00,60.04A4.00,4.00 0 0 0 8.00,63.51ZM148.00,63.51A4.00,4.00 0 0 0 150.00,60.04L150.00,27.71A4.00,4.00 0 0 0 144.00,24.25L116.00,40.41A4.00,4.00 0 0 0 114.00,43.88L114.00,76.21A4.00,4.00 0 0 0 120.00,79.67ZM68.54,129.10A4.00,4.00 0 0 1 65.07,135.10L26.31,135.10A4.00,4.00 0 0 1 22.85,133.10L3.46,99.53A4.00,4.00 0 0 1 6.93,93.53L45.69,93.53A4.00,4.00 0 0 1 49.15,95.53ZM106.85,95.53A4.00,4.00 0 0 1 110.31,93.53L149.07,93.53A4.00,4.00 0 0 1 152.54,99.53L133.15,133.10A4.00,4.00 0 0 1 129.69,135.10L90.93,135.10A4.00,4.00 0 0 1 87.46,129.10Z\"/></svg><span class=\"ds-word\">Teresis</span><span class=\"ds-links\"><a href=\"#\">How it keeps</a><a href=\"#\">Benchmarks</a><a href=\"#\">Install</a></span><a class=\"ds-pill\" href=\"#\">Join the waitlist</a></nav>",
+      "css": ".ds-nav { display: flex; align-items: center; gap: 12px; padding: 18px 20px; background: var(--field, #123a2a); font-family: var(--sans, 'Allo', system-ui, sans-serif); color: var(--cream, #f1e9d6); } .ds-mark { width: 30px; fill: var(--ochre, #d9af5b); } .ds-word { font-weight: 300; font-size: 22px; letter-spacing: -0.04em; } .ds-links { display: flex; gap: 28px; margin-left: auto; font-size: 15px; } .ds-links a { color: var(--sage, #b8cbb4); text-decoration: none; text-underline-offset: 0.22em; } .ds-links a:hover { color: var(--cream, #f1e9d6); text-decoration: underline; } .ds-pill { margin-left: 20px; font-size: 15px; font-weight: 500; text-decoration: none; color: var(--deep, #0c2b1f); background: var(--ochre, #d9af5b); padding: 10px 18px; border-radius: 999px; transition: background-color 0.2s var(--ease, cubic-bezier(0.16, 1, 0.3, 1)); } .ds-pill:hover { background: #e6c174; } .ds-pill:focus-visible, .ds-links a:focus-visible { outline: 2px solid var(--ochre, #d9af5b); outline-offset: 3px; border-radius: 6px; }"
+    },
+    {
+      "name": "Install Tabs + Code Panel",
+      "kind": "custom",
+      "refersTo": "code-panel",
+      "description": "Tab pills over a 12px mono panel; wrapped lines hang 2ch.",
+      "html": "<div class=\"ds-install\"><div class=\"ds-tabs\"><button class=\"ds-tab on\">Hermes</button><button class=\"ds-tab\">MCP</button><button class=\"ds-tab\">HTTP</button><button class=\"ds-tab\">Python</button></div><pre class=\"ds-code\"><code><span>python3 -m teresis hermes install</span><span>hermes config set memory.provider teresis</span></code></pre></div>",
+      "css": ".ds-install { padding: 16px; background: var(--field, #123a2a); font-family: var(--sans, 'Allo', system-ui, sans-serif); } .ds-tabs { display: flex; gap: 6px; margin-bottom: 10px; } .ds-tab { font-family: var(--sans, 'Allo', system-ui, sans-serif); font-size: 13px; color: var(--sage, #b8cbb4); background: none; border: 1px solid transparent; padding: 4px 10px; border-radius: 999px; cursor: pointer; } .ds-tab:hover { color: var(--cream, #f1e9d6); } .ds-tab.on { color: var(--cream, #f1e9d6); border-color: var(--line, rgba(217,175,91,0.22)); background: rgba(217, 175, 91, 0.08); } .ds-tab:focus-visible { outline: 2px solid var(--ochre, #d9af5b); outline-offset: 3px; } .ds-code { margin: 0; font-family: var(--mono, 'Fragment Mono', ui-monospace, monospace); font-size: 14.5px; line-height: 1.6; color: var(--cream, #f1e9d6); background: rgba(12, 43, 31, 0.6); border: 1px solid var(--line, rgba(217,175,91,0.22)); border-radius: 12px; padding: 20px; white-space: pre-wrap; } .ds-code span { display: block; padding-left: 2ch; text-indent: -2ch; }"
+    },
+    {
+      "name": "Story Step",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Ochre numeral, serif title, sage body, mono fact rows.",
+      "html": "<article class=\"ds-step\"><span class=\"ds-num\">5</span><h3 class=\"ds-title\">Local and deterministic.</h3><p class=\"ds-body\">No model call per turn, so writes are exact and repeatable.</p><ul class=\"ds-rows\"><li><span>recall p50 · no model (LoCoMo)</span><b>8.4 ms</b></li><li><span>network calls by default</span><b>0</b></li></ul></article>",
+      "css": ".ds-step { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: 8px; row-gap: 18px; padding: 24px; background: var(--field, #123a2a); color: var(--cream, #f1e9d6); font-family: var(--sans, 'Allo', system-ui, sans-serif); } .ds-num { grid-row: 1 / span 3; font-family: var(--serif, 'Cormorant', Georgia, serif); font-size: 64px; line-height: 0.9; color: var(--ochre, #d9af5b); font-variant-numeric: lining-nums; } .ds-title { grid-column: 2; margin: 0; font-family: var(--serif, 'Cormorant', Georgia, serif); font-weight: 400; font-size: 40px; line-height: 1.05; letter-spacing: -0.01em; } .ds-body { grid-column: 2; margin: 0; color: var(--sage, #b8cbb4); max-width: 46ch; } .ds-rows { grid-column: 2; list-style: none; margin: 0; padding: 18px 20px; display: grid; gap: 10px; font-family: var(--mono, 'Fragment Mono', ui-monospace, monospace); font-size: 13.5px; background: rgba(12, 43, 31, 0.6); border: 1px solid var(--line, rgba(217,175,91,0.22)); border-radius: 12px; } .ds-rows li { display: flex; justify-content: space-between; gap: 16px; color: var(--sage, #b8cbb4); } .ds-rows b { font-weight: 400; color: var(--ochre, #d9af5b); font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Benchmark Bars",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Direct-labelled rows; Teresis in ochre, competitors in Lichen.",
+      "html": "<figure class=\"ds-bars\"><figcaption>LongMemEval · NDCG@10 · median query time</figcaption><ul><li class=\"hi\"><span>Teresis + all-minilm</span><i><b style=\"width:93.6%\"></b></i><em>0.936</em><small>26 ms</small></li><li><span>mem0 OSS</span><i><b style=\"width:90.3%\"></b></i><em>0.903</em><small>366 ms</small></li></ul></figure>",
+      "css": ".ds-bars { margin: 0; padding: 20px; background: var(--deep, #0c2b1f); color: var(--cream, #f1e9d6); font-family: var(--sans, 'Allo', system-ui, sans-serif); } .ds-bars figcaption { font-size: 14px; color: var(--sage, #b8cbb4); margin-bottom: 14px; } .ds-bars ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; } .ds-bars li { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr) 3.4rem 3.6rem; align-items: center; gap: 14px; font-size: 14px; } .ds-bars i { height: 10px; border-radius: 0 4px 4px 0; background: rgba(184, 203, 180, 0.08); } .ds-bars b { display: block; height: 100%; border-radius: 0 4px 4px 0; background: #7d9a84; } .ds-bars li.hi b { background: var(--ochre, #d9af5b); } .ds-bars li.hi span { font-weight: 500; } .ds-bars em { font-style: normal; text-align: right; font-variant-numeric: tabular-nums; } .ds-bars small { text-align: right; font-size: 13px; color: var(--sage, #b8cbb4); font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Lotus Mark",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Five filleted petals on the 30-60-90 lattice; the only solid in the drawing.",
+      "html": "<div class=\"ds-lotus\"><svg class=\"ds-mark\" viewBox=\"0 0 156 135.1\" aria-hidden=\"true\"><path d=\"M74.54,6.00A4.00,4.00 0 0 1 81.46,6.00L101.46,40.64A4.00,4.00 0 0 1 102.00,42.64L102.00,82.07A4.00,4.00 0 0 1 101.46,84.07L81.46,118.71A4.00,4.00 0 0 1 74.54,118.71L54.54,84.07A4.00,4.00 0 0 1 54.00,82.07L54.00,42.64A4.00,4.00 0 0 1 54.54,40.64ZM36.00,79.67A4.00,4.00 0 0 0 42.00,76.21L42.00,43.88A4.00,4.00 0 0 0 40.00,40.41L12.00,24.25A4.00,4.00 0 0 0 6.00,27.71L6.00,60.04A4.00,4.00 0 0 0 8.00,63.51ZM148.00,63.51A4.00,4.00 0 0 0 150.00,60.04L150.00,27.71A4.00,4.00 0 0 0 144.00,24.25L116.00,40.41A4.00,4.00 0 0 0 114.00,43.88L114.00,76.21A4.00,4.00 0 0 0 120.00,79.67ZM68.54,129.10A4.00,4.00 0 0 1 65.07,135.10L26.31,135.10A4.00,4.00 0 0 1 22.85,133.10L3.46,99.53A4.00,4.00 0 0 1 6.93,93.53L45.69,93.53A4.00,4.00 0 0 1 49.15,95.53ZM106.85,95.53A4.00,4.00 0 0 1 110.31,93.53L149.07,93.53A4.00,4.00 0 0 1 152.54,99.53L133.15,133.10A4.00,4.00 0 0 1 129.69,135.10L90.93,135.10A4.00,4.00 0 0 1 87.46,129.10Z\"/></svg></div>",
+      "css": ".ds-lotus { padding: 24px; background: var(--field, #123a2a); } .ds-lotus .ds-mark { width: 120px; fill: var(--ochre, #d9af5b); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Construction Drawing of Keeping",
+    "overview": "Every Teresis surface is a construction drawing. A 30-60-90 grid (kisrhombille) is etched across the whole page in faint ochre hairlines. The lotus mark is built on that grid, one petal per idea, and it is the only solid shape in the drawing. The grid runs under every section, so the page reads as a single plate rather than a stack of cards. The content belongs to the drawing: a fact kept, a value replaced, a scope fenced off.\n\nThe ground is dark lotus-leaf green with a cool, still, botanical feel. Manuscript Ochre is the gold leaf on that plate. It marks the petals, the grid lines, key figures and the one action. Headlines are engraved Cormorant Garamond, the interface is Allo, a soft rounded sans, and Fragment Mono appears only where the reader is looking at code. Density is low and paced for scrolling. Long sections give each idea room, and the motion is slow assembly, never decoration.\n\nThe world rejects two things outright. One is the dark dev-tool hero: a terminal window, neon glow, a gradient mesh. The other is the cream editorial page. Teresis is dark and green, but it is botanical rather than technical.",
+    "keyCharacteristics": [
+      "A full-bleed kisrhombille grid on every section, aligned to the lotus lattice.",
+      "One code-drawn lotus that assembles petal by petal: the grid draws first, then the solid lands.",
+      "One ochre-filled action per view; every other control is a hairline.",
+      "Engraved serif display with lining figures; a soft sans for UI; mono only for code.",
+      "Flat tonal layers (field and deep) separated by ochre hairlines; no surface shadows."
+    ],
+    "rules": [
+      {
+        "name": "The One Ochre Action Rule",
+        "body": "Ochre fills exactly one kind of control: the waitlist action, as the nav pill, the form button and the sticky-bar button. Copy, tabs and every secondary control are transparent with an Etched Rule outline. A second filled ochre button in the same view is a defect.",
+        "section": "colors"
+      },
+      {
+        "name": "The Gold-Leaf Rule",
+        "body": "Ochre carries meaning: something kept, the answer, the thing to do. Highlight a benchmark bar in ochre only when it is Teresis; competitors stay Lichen.",
+        "section": "colors"
+      },
+      {
+        "name": "The Lining Figures Rule",
+        "body": "Every numeral set in Cormorant uses lining figures (`font-variant-numeric: lining-nums`), and every data column uses tabular figures. Old-style figures make \"100 out of 100\" read as text.",
+        "section": "typography"
+      },
+      {
+        "name": "The Mono Is Code Rule",
+        "body": "Fragment Mono appears only inside code panels and machine-output rows. Labels, captions and buttons are always Allo.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Plate Rule",
+        "body": "Surfaces sit on the plate; they don't hover over it. The only object allowed a shadow is the one that moves over content.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Pill and Panel Rule",
+        "body": "Controls are pills and containers are 12px panels. There is no third radius for interface shapes.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do run the etched kisrhombille grid under every section in Manuscript Ochre at low stroke opacity, aligned to the lotus lattice. Stroke opacity is 9% under sections, 20% in the hero and 40% inside the lotus plate.",
+      "Do keep exactly one filled ochre action per view, and draw every other control as a hairline pill.",
+      "Do set every Cormorant numeral with lining figures and every data column with tabular figures.",
+      "Do build new marks, icons and illustrations on the 30-60-90 lattice, with corners filleted at radius 4 in mark units.",
+      "Do separate depth with Lotus-Leaf Field and Pond Deep plus Etched Rule hairlines, not shadows.",
+      "Do let motion assemble (grid first, then solid) with `cubic-bezier(0.16, 1, 0.3, 1)`, and show the finished state under reduced motion."
+    ],
+    "donts": [
+      "Don't use a dark dev-tool hero (terminal window, neon glow, gradient mesh), and don't use the cream editorial page.",
+      "Don't use Fragment Mono for labels, captions, buttons or headings.",
+      "Don't present facts as a big-number stat trio; use direct-labelled bars or mono rows.",
+      "Don't add a second filled ochre button, a third interface radius or a shadow on a panel.",
+      "Don't fill a competitor's bar in ochre."
+    ]
+  }
+}
