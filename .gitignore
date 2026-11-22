@@ -15,3 +15,5 @@ dist/
 .DS_Store
 .data/
 .venv-bench/
+.venv-bench312/
+.venv-tam/

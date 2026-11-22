@@ -75,8 +75,13 @@ evaluated once on the untouched 100-question test split (seed 13):
 | System | recall_any@5 | recall_all@10 | NDCG@10 | ingest rounds/s | query p50 |
 | --- | --- | --- | --- | --- | --- |
 | **teresis + all-minilm** | **0.98** | 0.95 | **0.936** | 5.7* | 26 ms** |
-| mem0 OSS 2.2.1 (vector only, all-minilm) | **0.98** | **0.96** | 0.903 | 8.3* | 366 ms |
+| mem0 OSS 2.2.1 hybrid (BM25 + spaCy + all-minilm, infer=False) | 0.97 | 0.93 | 0.932 | 60* | 714 ms |
+| LanceDB hybrid (BM25 + all-minilm, RRF) | 0.97 | 0.93 | 0.930 | cached* | 23 ms |
+| ChromaDB (all-minilm) | **0.98** | **0.96** | 0.904 | 15.9* | 27 ms |
+| mem0 OSS 2.2.1 (vector only, all-minilm, infer=False) | **0.98** | **0.96** | 0.903 | 8.3* | 366 ms |
+| total-agent-memory 14.10 (FastEmbed + FTS + RRF, no reranker) | 0.97 | 0.92 | 0.900 | 10.8 | 108 ms |
 | teresis (no model) | 0.97 | 0.89 | 0.882 | 43 | 25 ms |
+| SQLite FTS5 (BM25, porter) | 0.96 | 0.87 | 0.881 | 18,983 | 0.5 ms |
 | holographic (Hermes plugin) | 0.94 | 0.85 | 0.859 | 7.2 | 23 ms |
 | naive LIKE, newest first | 0.35 | 0.18 | 0.195 | — | 6 ms |
 
@@ -95,10 +100,14 @@ How to read it:
   `NDCG@10` (`0.936` vs `0.903`) and combined objective (`0.943` vs `0.932`).
 - Leak check: the evidence sessions' mean position in time is 0.54 (0 is oldest, 1 is newest), and
   Teresis scores the same with its recency and importance priors turned off.
-- \* Ingest speeds for the embedding systems were measured while they shared one CPU Ollama
-  process, so treat them as rough. mem0 was given batch-precomputed embeddings through a cache on its
-  own embedder. Without that it ingested 1.6 rounds/s. mem0 ran without its optional BM25 and spaCy
-  extras, with telemetry disabled and infer=False (no LLM).
+- \* Ingest speeds for embedding systems are not directly comparable: `teresis + all-minilm` and
+  vector-only `mem0` shared CPU Ollama; `LanceDB` and `mem0 hybrid` reused an on-disk ingest cache
+  of the exact `all-minilm` vectors computed by `ChromaDB` (all query embeddings remained live and
+  uncached). `mem0` ran with telemetry disabled and `infer=False` (no LLM) in both vector-only and
+  v3 hybrid (`mem0ai[nlp]` + `fastembed` BM25 + spaCy) modes; both reused one local Qdrant
+  collection filtered by `user_id` across the 100 questions. `total-agent-memory` ran with its
+  built-in FastEmbed `paraphrase-multilingual-MiniLM-L12-v2` and `defer_cross_rerank=True` (no
+  cross-encoder) across 4 shards.
 - \*\* `teresis + all-minilm` query p50 was 26 ms against idle CPU Ollama (152 ms in the earlier
   head-to-head run while sharing CPU Ollama with mem0).
 - Not compared: supermemory, honcho, retaindb, byterover, openviking and hindsight. They are cloud
@@ -121,18 +130,28 @@ Everything ran on nucbox (CPU only).
 | --- | --- | --- | --- | --- | --- | --- |
 | **teresis + all-minilm** | **0.654** | **0.727** | **0.588** | **0.516** | 63 | 22 ms |
 | teresis (no model) | 0.637 | 0.712 | 0.585 | 0.512 | 422 | 8.4 ms |
-| holographic (Hermes plugin) | 0.563 | 0.638 | 0.530 | 0.449 | 41 | 10 ms |
-| mem0 OSS (infer=False, all-minilm) | 0.449 | 0.566 | 0.440 | 0.342 | 71 | 126 ms |
+| total-agent-memory 14.10 (FastEmbed + FTS + RRF, no reranker) | 0.612 | 0.696 | 0.572 | 0.488 | 12.5 | 45 ms |
+| SQLite FTS5 (BM25, porter) | 0.606 | 0.689 | 0.566 | 0.485 | 147,213 | 0.5 ms |
+| LanceDB hybrid (BM25 + all-minilm, RRF) | 0.589 | 0.686 | 0.555 | 0.457 | 63 | 19 ms |
+| mem0 OSS 2.2.1 hybrid (BM25 + spaCy + all-minilm, infer=False) | 0.564 | 0.682 | 0.553 | 0.433 | 50 | 221 ms |
+| holographic (Hermes plugin) | 0.562 | 0.638 | 0.530 | 0.449 | 41 | 10 ms |
+| mem0 OSS 2.2.1 (vector only, all-minilm, infer=False) | 0.449 | 0.566 | 0.440 | 0.342 | 71 | 126 ms |
+| ChromaDB (all-minilm) | 0.448 | 0.563 | 0.439 | 0.341 | 60 | 11 ms |
 | naive LIKE, newest first | 0.025 | 0.049 | 0.038 | 0.021 | — | 0.8 ms |
 
 recall_any@5 by category:
 
 | System | multi-hop (282) | temporal (321) | open-domain (92) | single-hop (841) |
 | --- | --- | --- | --- | --- |
-| teresis + all-minilm | 0.603 | 0.707 | 0.359 | 0.684 |
-| teresis (no model) | 0.539 | 0.685 | 0.380 | 0.680 |
+| teresis + all-minilm | **0.603** | **0.707** | 0.359 | **0.684** |
+| teresis (no model) | 0.539 | 0.685 | **0.380** | 0.680 |
+| total-agent-memory (no reranker) | 0.443 | 0.685 | **0.380** | 0.666 |
+| SQLite FTS5 (BM25) | 0.457 | 0.682 | 0.359 | 0.653 |
+| LanceDB hybrid | 0.560 | 0.654 | 0.348 | 0.601 |
+| mem0 OSS hybrid (infer=False) | 0.539 | 0.660 | 0.337 | 0.560 |
 | holographic | 0.372 | 0.635 | 0.337 | 0.623 |
-| mem0 | 0.401 | 0.517 | 0.239 | 0.463 |
+| mem0 OSS (vector only) | 0.401 | 0.517 | 0.239 | 0.463 |
+| ChromaDB | 0.401 | 0.517 | 0.239 | 0.460 |
 
 How to read it:
 - Turns are short and full of names and dates, which is where exact-term matching earns its keep.
@@ -140,8 +159,9 @@ How to read it:
   same embedding model it leads by 20.5 points and queries 5.6 times faster.
 - The embedding model mainly helps multi-hop (`0.539 → 0.603`). It does not help open-domain, where
   the no-model run is slightly ahead (`0.380` vs `0.359`, 92 questions, so within noise).
-- This is retrieval only. It does not test answer generation or abstention. mem0 ran without its
-  optional BM25 and spaCy extras and with infer=False (no LLM), the same as in the LongMemEval run.
+- This is retrieval only. It does not test answer generation or abstention. `mem0` ran with
+  `infer=False` (no LLM) in both vector-only and v3 hybrid (`fastembed` BM25 + spaCy) modes;
+  `total-agent-memory` ran with its default FastEmbed MiniLM and `defer_cross_rerank=True`.
 
 Reproduce: download `locomo10.json` from the LoCoMo repo to `.data/`, then
 `python bench/locomo.py --data .data/locomo10.json --system <naive|teresis|teresis-emb|holographic|mem0>`.

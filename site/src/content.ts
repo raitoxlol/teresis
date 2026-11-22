@@ -29,15 +29,23 @@ export const LIVE_METHOD =
 export const LOCOMO: BarRow[] = [
   {label: 'Teresis + all-minilm', value: 0.654, display: '0.654', note: '22 ms', highlight: true},
   {label: 'Teresis, no model', value: 0.637, display: '0.637', note: '8.4 ms', highlight: true},
-  {label: 'holographic (Hermes plugin)', value: 0.563, display: '0.563', note: '10 ms'},
-  {label: 'mem0 OSS (infer=False, vector)', value: 0.449, display: '0.449', note: '126 ms'},
+  {label: 'total-agent-memory (no reranker)', value: 0.612, display: '0.612', note: '45 ms'},
+  {label: 'SQLite FTS5 (BM25)', value: 0.606, display: '0.606', note: '0.5 ms'},
+  {label: 'LanceDB hybrid', value: 0.589, display: '0.589', note: '19 ms'},
+  {label: 'mem0 OSS hybrid (infer=False)', value: 0.564, display: '0.564', note: '221 ms'},
+  {label: 'holographic (Hermes plugin)', value: 0.562, display: '0.562', note: '10 ms'},
+  {label: 'ChromaDB', value: 0.448, display: '0.448', note: '11 ms'},
   {label: 'Naive LIKE, newest first', value: 0.025, display: '0.025', note: '0.8 ms'},
 ];
 
 export const LONGMEMEVAL: BarRow[] = [
   {label: 'Teresis + all-minilm', value: 0.936, display: '0.936', note: '26 ms', highlight: true},
-  {label: 'mem0 OSS (infer=False, vector)', value: 0.903, display: '0.903', note: '366 ms'},
+  {label: 'mem0 OSS hybrid (infer=False)', value: 0.932, display: '0.932', note: '714 ms'},
+  {label: 'LanceDB hybrid', value: 0.930, display: '0.930', note: '23 ms'},
+  {label: 'ChromaDB', value: 0.904, display: '0.904', note: '27 ms'},
+  {label: 'total-agent-memory (no reranker)', value: 0.900, display: '0.900', note: '108 ms'},
   {label: 'Teresis, no model', value: 0.882, display: '0.882', note: '25 ms', highlight: true},
+  {label: 'SQLite FTS5 (BM25)', value: 0.881, display: '0.881', note: '0.5 ms'},
   {label: 'holographic (Hermes plugin)', value: 0.859, display: '0.859', note: '23 ms'},
   {label: 'Naive LIKE, newest first', value: 0.195, display: '0.195', note: '6 ms'},
 ];

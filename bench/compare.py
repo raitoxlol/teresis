@@ -196,9 +196,9 @@ class Mem0:
     def add_all(self, units):
         self._install_cache()
         texts = [t for _, t, _ in units]
-        for i in range(0, len(texts), 16):
-            for t, v in zip(texts[i:i + 16], Mem0._batch.embed(texts[i:i + 16])):
-                Mem0._cache[t] = v
+        vecs = _embed_batched(Mem0._batch, texts, batch=16)
+        for t, v in zip(texts, vecs):
+            Mem0._cache[t] = v
         for sid, text, t in units:
             self.m.add([{"role": "user", "content": text}], user_id=self.user, infer=False, metadata={"sid": sid})
         Mem0._cache.clear()
@@ -210,6 +210,238 @@ class Mem0:
 
     def close(self):
         pass
+
+
+
+class SQLiteFTS5:
+    name = "SQLite FTS5 (BM25)"
+
+    def __init__(self, tmp: Path):
+        from teresis.text import tokens
+        self._tokens = tokens
+        self.c = sqlite3.connect(str(tmp / "fts.db"))
+        self.c.execute("CREATE VIRTUAL TABLE u USING fts5(sid UNINDEXED, text, tokenize='porter unicode61')")
+
+    def add_all(self, units):
+        self.c.executemany("INSERT INTO u(sid, text) VALUES (?,?)", [(sid, text) for sid, text, _ in units])
+        self.c.commit()
+
+    def search(self, query, now):
+        toks = self._tokens(query) or self._tokens(query, keep_stopwords=True)
+        q = " OR ".join(f'"{t}"' for t in toks if t.isalnum())
+        if not q:
+            return []
+        try:
+            return [r[0] for r in self.c.execute(f"SELECT sid FROM u WHERE u MATCH ? ORDER BY bm25(u) LIMIT {TOPN}", (q,))]
+        except sqlite3.OperationalError:
+            return []
+
+    def close(self):
+        self.c.close()
+
+
+def _ollama_embedder():
+    from teresis.embed import OllamaEmbedder
+    return OllamaEmbedder(
+        os.environ.get("TERESIS_EMBED_MODEL", "all-minilm"),
+        os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+    )
+
+
+_EMBED_CACHE_CONN = None
+
+
+def _get_embed_cache():
+    global _EMBED_CACHE_CONN
+    path = os.environ.get("BENCH_EMBED_CACHE")
+    if not path:
+        return None
+    if _EMBED_CACHE_CONN is None:
+        _EMBED_CACHE_CONN = sqlite3.connect(path)
+        _EMBED_CACHE_CONN.execute(
+            "CREATE TABLE IF NOT EXISTS emb(k TEXT PRIMARY KEY, v BLOB)"
+        )
+    return _EMBED_CACHE_CONN
+
+
+def _embed_batched(emb, texts: list[str], batch: int = 16) -> list[list[float]]:
+    import hashlib, struct
+    conn = _get_embed_cache()
+    if conn is None:
+        out: list[list[float]] = []
+        for i in range(0, len(texts), batch):
+            out.extend(emb.embed(texts[i:i + batch]))
+        return out
+    model = os.environ.get("TERESIS_EMBED_MODEL", "all-minilm")
+    keys = [hashlib.sha256(f"{model}::{t}".encode("utf-8", "replace")).hexdigest() for t in texts]
+    found: dict[str, list[float]] = {}
+    for i in range(0, len(keys), 500):
+        chunk = keys[i:i + 500]
+        ph = ",".join("?" * len(chunk))
+        for k, blob in conn.execute(f"SELECT k, v FROM emb WHERE k IN ({ph})", chunk):
+            n = len(blob) // 4
+            found[k] = list(struct.unpack(f"<{n}f", blob))
+    missing_idx = [i for i, k in enumerate(keys) if k not in found]
+    if missing_idx:
+        # deduplicate missing keys within this batch
+        uniq_pos = []
+        seen = set()
+        for idx in missing_idx:
+            if keys[idx] not in seen:
+                seen.add(keys[idx])
+                uniq_pos.append(idx)
+        to_write = []
+        for i in range(0, len(uniq_pos), batch):
+            idxs = uniq_pos[i:i + batch]
+            vecs = emb.embed([texts[j] for j in idxs])
+            for j, v in zip(idxs, vecs):
+                found[keys[j]] = v
+                to_write.append((keys[j], struct.pack(f"<{len(v)}f", *v)))
+        conn.executemany("INSERT OR IGNORE INTO emb(k, v) VALUES (?,?)", to_write)
+        conn.commit()
+    return [found[k] for k in keys]
+
+
+class Chroma:
+    def __init__(self, tmp: Path):
+        os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+        import chromadb
+        self.model = os.environ.get("TERESIS_EMBED_MODEL", "all-minilm")
+        self.name = f"ChromaDB ({self.model})"
+        self.emb = _ollama_embedder()
+        self.client = chromadb.PersistentClient(path=str(tmp / "chroma"))
+        self.col = self.client.create_collection("bench", metadata={"hnsw:space": "cosine"})
+
+    def add_all(self, units):
+        if not units:
+            return
+        texts = [t for _, t, _ in units]
+        vecs = _embed_batched(self.emb, texts)
+        for i in range(0, len(units), 500):
+            sl = slice(i, i + 500)
+            self.col.add(
+                ids=[str(j) for j in range(i, min(i + 500, len(units)))],
+                embeddings=vecs[sl],
+                metadatas=[{"sid": sid} for sid, _, _ in units[sl]],
+                documents=texts[sl],
+            )
+
+    def search(self, query, now):
+        qv = self.emb.embed([query])[0]
+        n = min(TOPN, self.col.count())
+        if n <= 0:
+            return []
+        res = self.col.query(query_embeddings=[qv], n_results=n)
+        metas = (res.get("metadatas") or [[]])[0]
+        return [m["sid"] for m in metas]
+
+    def close(self):
+        pass
+
+
+class LanceDBHybrid:
+    def __init__(self, tmp: Path):
+        import lancedb
+        from lancedb.rerankers import RRFReranker
+        self.model = os.environ.get("TERESIS_EMBED_MODEL", "all-minilm")
+        self.name = f"LanceDB hybrid (BM25 + {self.model})"
+        self.emb = _ollama_embedder()
+        self.db = lancedb.connect(str(tmp / "lance"))
+        self.reranker = RRFReranker()
+        self.tbl = None
+
+    def add_all(self, units):
+        if not units:
+            return
+        texts = [t for _, t, _ in units]
+        vecs = _embed_batched(self.emb, texts)
+        rows = [{"sid": sid, "text": text, "vector": vec} for (sid, text, _), vec in zip(units, vecs)]
+        self.tbl = self.db.create_table("mem", rows)
+        self.tbl.create_fts_index("text", replace=True)
+
+    def search(self, query, now):
+        if self.tbl is None:
+            return []
+        qv = self.emb.embed([query])[0]
+        clean_q = " ".join(w for w in query.split() if any(c.isalnum() for c in w))
+        try:
+            if clean_q:
+                res = (self.tbl.search(query_type="hybrid")
+                       .vector(qv).text(clean_q).rerank(self.reranker).limit(TOPN).to_list())
+            else:
+                res = self.tbl.search(qv).limit(TOPN).to_list()
+        except Exception:
+            res = self.tbl.search(qv).limit(TOPN).to_list()
+        return [r["sid"] for r in res]
+
+    def close(self):
+        pass
+
+
+class Mem0Hybrid(Mem0):
+    def __init__(self, tmp: Path):
+        super().__init__(tmp)
+        model = os.environ.get("TERESIS_EMBED_MODEL", "all-minilm")
+        self.name = f"mem0 OSS hybrid (infer=False, BM25 + spaCy + {model})"
+        if not getattr(self.m.vector_store, "_has_bm25_slot", False):
+            raise SystemExit("mem0-hybrid requires fastembed BM25 slot in Qdrant (run under .venv-bench312)")
+
+
+class TotalAgentMemory:
+    name = "total-agent-memory 14.10 (FastEmbed + FTS + RRF, no reranker)"
+    _patched_loader = False
+
+    def __init__(self, tmp: Path):
+        import total_agent_memory.server as tam_srv
+        tam_src = str(Path(tam_srv.__file__).parent.parent / "src")
+        if tam_src not in sys.path:
+            sys.path.insert(0, tam_src)
+        if not TotalAgentMemory._patched_loader:
+            import memory_core.fastembed_loader as fel
+            _orig_load = fel.load_model
+            _model_cache = {}
+            def _cached_load(cls, model_name, *args, **kwargs):
+                key = (cls, model_name)
+                if key not in _model_cache:
+                    _model_cache[key] = _orig_load(cls, model_name, *args, **kwargs)
+                return _model_cache[key]
+            fel.load_model = _cached_load
+            TotalAgentMemory._patched_loader = True
+        import cli_store
+        import server as tam_server
+        self._ctx = cli_store.open_store(tmp / "tam")
+        self.store = self._ctx.__enter__()
+        worker = getattr(self.store, "_enrich_worker", None)
+        if worker is not None:
+            worker.stop()
+        self.recall = tam_server.Recall(self.store)
+
+    def add_all(self, units):
+        vecs = None
+        fe = getattr(self.store, "fastembed", None)
+        if fe is not None and units:
+            vecs = [v.tolist() for v in fe.embed([t for _, t, _ in units], batch_size=32)]
+        for i, (sid, text, _) in enumerate(units):
+            self.store.save_knowledge(
+                sid, text, "fact", project="bench",
+                skip_dedup=True, skip_quality=True,
+                embedding=vecs[i] if vecs is not None else None,
+            )
+
+    def search(self, query, now):
+        hits = self.recall.search(query, project="bench", limit=TOPN, record_usage=False, defer_cross_rerank=True)
+        items = []
+        for bucket in (hits.get("results") or {}).values():
+            if isinstance(bucket, list):
+                items.extend(bucket)
+        items.sort(key=lambda r: float(r.get("score") or r.get("rrf_score") or 0.0), reverse=True)
+        return [r["session_id"] for r in items if r.get("session_id")]
+
+    def close(self):
+        try:
+            self.recall.close()
+        finally:
+            self._ctx.__exit__(None, None, None)
 
 
 def make(system: str, tmp: Path, hermes: Path):
@@ -225,6 +457,16 @@ def make(system: str, tmp: Path, hermes: Path):
         return Holographic(tmp, hermes)
     if system == "mem0":
         return Mem0(tmp)
+    if system == "mem0-hybrid":
+        return Mem0Hybrid(tmp)
+    if system == "fts5":
+        return SQLiteFTS5(tmp)
+    if system == "chroma":
+        return Chroma(tmp)
+    if system == "lancedb":
+        return LanceDBHybrid(tmp)
+    if system == "tam":
+        return TotalAgentMemory(tmp)
     raise SystemExit(f"unknown system {system}")
 
 

@@ -268,7 +268,7 @@ export function App() {
               <Bars rows={LONGMEMEVAL} max={1} caption="LongMemEval · ranking quality (NDCG@10) · median query time" />
               <Bars rows={LOCOMO} max={1} caption="LoCoMo · evidence in the top 5 (recall@5) · median query time" />
             </div>
-            <p className="fine">Retrieval only, no LLM calls, using all-minilm where embeddings are enabled. mem0 OSS ran with infer=False (vector only). Higher is better.</p>
+            <p className="fine">Retrieval only, no LLM calls. Vector and hybrid systems share local Ollama all-minilm except total-agent-memory (its built-in FastEmbed MiniLM, cross-encoder off). mem0 OSS ran v3 hybrid (BM25 + spaCy + vectors, infer=False). Higher is better.</p>
           </div>
         </section>
 
