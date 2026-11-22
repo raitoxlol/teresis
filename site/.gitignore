@@ -1,0 +1,5 @@
+node_modules
+dist
+themes/teresis/*.png
+themes/teresis/preview.html
+dist-single
