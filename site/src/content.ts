@@ -30,13 +30,13 @@ export const LOCOMO: BarRow[] = [
   {label: 'Teresis + all-minilm', value: 0.654, display: '0.654', note: '22 ms', highlight: true},
   {label: 'Teresis, no model', value: 0.637, display: '0.637', note: '8.4 ms', highlight: true},
   {label: 'holographic (Hermes plugin)', value: 0.563, display: '0.563', note: '10 ms'},
-  {label: 'mem0 OSS', value: 0.449, display: '0.449', note: '126 ms'},
+  {label: 'mem0 OSS (infer=False, vector)', value: 0.449, display: '0.449', note: '126 ms'},
   {label: 'Naive LIKE, newest first', value: 0.025, display: '0.025', note: '0.8 ms'},
 ];
 
 export const LONGMEMEVAL: BarRow[] = [
   {label: 'Teresis + all-minilm', value: 0.936, display: '0.936', note: '26 ms', highlight: true},
-  {label: 'mem0 OSS', value: 0.903, display: '0.903', note: '366 ms'},
+  {label: 'mem0 OSS (infer=False, vector)', value: 0.903, display: '0.903', note: '366 ms'},
   {label: 'Teresis, no model', value: 0.882, display: '0.882', note: '25 ms', highlight: true},
   {label: 'holographic (Hermes plugin)', value: 0.859, display: '0.859', note: '23 ms'},
   {label: 'Naive LIKE, newest first', value: 0.195, display: '0.195', note: '6 ms'},
