@@ -1,6 +1,6 @@
 import {useState, type FormEvent} from 'react';
 
-const ENDPOINT = (import.meta.env.VITE_WAITLIST_ENDPOINT as string | undefined) || '/api/waitlist';
+const ENDPOINT = (import.meta.env.VITE_WAITLIST_ENDPOINT as string | undefined) || '/teresis/api/waitlist';
 
 type State = 'idle' | 'sending' | 'done' | 'error';
 

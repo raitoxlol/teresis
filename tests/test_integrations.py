@@ -194,7 +194,7 @@ class HermesProviderTests(unittest.TestCase):
 
     def test_near_duplicate_writes_are_skipped_but_changes_are_kept(self):
         p = self.provider()
-        p.on_memory_write("add", "memory", "Wright's staging database is named quokka-staging and uses port 5433.")
+        p.on_memory_write("add", "memory", "Alice's staging database is named quokka-staging and uses port 5433.")
         # extractor path, different wording, same fact -> skipped
         p.sync_turn("my staging database is called quokka-staging on port 5433.", "ok")
         hits = [m for m in p._store.recall("staging database port", scope=p._read_scopes, k=10,
