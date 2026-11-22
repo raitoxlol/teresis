@@ -84,12 +84,20 @@ class Naive:
 
 class Teresis:
     name = "teresis"
+    _rr = None
 
-    def __init__(self, tmp: Path, embed: bool = False):
-        from teresis import MemoryStore
+    def __init__(self, tmp: Path, embed: bool = False, rerank: bool = False):
+        from teresis import MemoryStore, Weights
         self.clock = {"t": 0.0}
         self.embed = embed
-        self.s = MemoryStore(tmp / "m.db", embedder=None, clock=lambda: self.clock["t"])
+        rr = None
+        if rerank:
+            if Teresis._rr is None:
+                from teresis.embed import FastEmbedReranker
+                Teresis._rr = FastEmbedReranker(os.environ.get("TERESIS_RERANK_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2"))
+            rr = Teresis._rr
+        w = Weights(rerank_pool=int(os.environ.get("BENCH_RERANK_POOL", "15"))) if rerank else Weights()
+        self.s = MemoryStore(tmp / "m.db", embedder=None, reranker=rr, weights=w, clock=lambda: self.clock["t"])
         if embed:
             from teresis.embed import from_env
             self.emb = from_env()
@@ -103,8 +111,13 @@ class Teresis:
             r = self.s.remember(text, scope="bench", kind="episode")
             self.sid.setdefault(r.id, sid)
         if self.embed:
+            class _IngestCache:
+                name = self.emb.name
+                def embed(_self, texts):
+                    return _embed_batched(self.emb, list(texts), batch=16)
+            self.s.embedder = _IngestCache()
+            self.s.embed_missing(batch=64)
             self.s.embedder = self.emb
-            self.s.embed_missing(batch=16)
 
     def search(self, query, now):
         self.clock["t"] = now
@@ -452,6 +465,10 @@ def make(system: str, tmp: Path, hermes: Path):
     if system == "teresis-emb":
         a = Teresis(tmp, embed=True)
         a.name = f"teresis + {os.environ.get('TERESIS_EMBED_MODEL')}"
+        return a
+    if system == "teresis-rerank":
+        a = Teresis(tmp, embed=True, rerank=True)
+        a.name = f"teresis + {os.environ.get('TERESIS_EMBED_MODEL')} + MiniLM reranker"
         return a
     if system == "holographic":
         return Holographic(tmp, hermes)

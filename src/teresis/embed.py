@@ -107,3 +107,35 @@ def top_k(query: Sequence[float], rows: list[tuple[str, bytes]], k: int) -> list
         scored.append((mid, sum(a * b for a, b in zip(q, v))))
     scored.sort(key=lambda t: t[1], reverse=True)
     return scored[:k]
+
+
+class Reranker(Protocol):
+    name: str
+
+    def rerank(self, query: str, docs: Sequence[str]) -> list[float]: ...
+
+
+class FastEmbedReranker:
+    """Optional local ONNX cross-encoder reranker (requires `pip install fastembed`)."""
+
+    def __init__(self, model: str = "Xenova/ms-marco-MiniLM-L-6-v2"):
+        from fastembed.rerank.cross_encoder import TextCrossEncoder  # type: ignore
+
+        self.model = model
+        self.name = f"fastembed:{model}"
+        self._enc = TextCrossEncoder(model_name=model)
+
+    def rerank(self, query: str, docs: Sequence[str]) -> list[float]:
+        if not docs:
+            return []
+        return [float(s) for s in self._enc.rerank(query, list(docs))]
+
+
+def reranker_from_env() -> Reranker | None:
+    kind = os.environ.get("TERESIS_RERANK", "").strip().lower()
+    if not kind or kind == "none":
+        return None
+    if kind == "fastembed":
+        model = os.environ.get("TERESIS_RERANK_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
+        return FastEmbedReranker(model)
+    raise ValueError(f"unknown TERESIS_RERANK provider: {kind!r}")

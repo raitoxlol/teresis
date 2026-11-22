@@ -6,7 +6,13 @@ import hashlib
 import re
 import unicodedata
 
-_WORD = re.compile(r"[\w][\w'.-]*[\w]|[\w]", re.UNICODE)
+_WORD = re.compile(r"[\w][\w'’.-]*[\w]|[\w]", re.UNICODE)
+_CONTRACTIONS = frozenset(
+    """aren't can't couldn't didn't doesn't don't hadn't hasn't haven't he'd he'll he's
+    i'd i'll i'm i've isn't it's let's mightn't mustn't shan't she'd she'll she's
+    shouldn't that's there's they'd they'll they're they've wasn't we'd we'll we're
+    we've weren't what's where's who's won't wouldn't you'd you'll you're you've""".split()
+)
 
 STOPWORDS = frozenset(
     """a an and are as at be been but by can could did do does doing for from had has have
@@ -33,10 +39,14 @@ def content_hash(text: str) -> str:
 def tokens(text: str, *, keep_stopwords: bool = False) -> list[str]:
     out = []
     for raw in _WORD.findall(unicodedata.normalize("NFKC", text).casefold()):
-        tok = raw.strip("'.-")
+        tok = raw.replace("’", "'").strip("'.-")
         if not tok:
             continue
-        if not keep_stopwords and tok in STOPWORDS:
+        if not keep_stopwords and tok in _CONTRACTIONS:
+            continue
+        if tok.endswith("'s") and len(tok) > 2:
+            tok = tok[:-2]
+        if not tok or (not keep_stopwords and tok in STOPWORDS):
             continue
         out.append(tok)
     return out
@@ -98,3 +108,25 @@ def trigram_query(text: str, max_grams: int = 48) -> str | None:
 
 def estimate_tokens(text: str) -> int:
     return max(1, (len(text) + 3) // 4)
+
+
+_BETWEEN = re.compile(r"\bbetween\s+(.+?)\s+and\s+(.+?)(?:\?|$)", re.I)
+_FIRST_OR = re.compile(r"(?:first|earlier|before|longer|more recently)[,:]\s+(.+?)\s+or\s+(.+?)(?:\?|$)", re.I)
+_SINCE_WHEN = re.compile(r"\bsince\s+(.+?)\s+when\s+(.+?)(?:\?|$)", re.I)
+_COMPARE = re.compile(r"\bcompare\s+(.+?)\s+(?:and|with|to|vs\.?)\s+(.+?)(?:\?|$)", re.I)
+_QUOTED = re.compile(r"['\"]([^'\"]{2,60})['\"]")
+
+
+def sub_queries(query: str) -> list[str]:
+    """Split comparison / multi-entity queries into clauses so neither side drowns the other."""
+    q = (query or "").strip()
+    for pat in (_BETWEEN, _FIRST_OR, _SINCE_WHEN, _COMPARE):
+        if m := pat.search(q):
+            a, b = m.group(1).strip(" ,.?!"), m.group(2).strip(" ,.?!")
+            if tokens(a) and tokens(b):
+                return [a, b]
+    quoted = [m.group(1).strip() for m in _QUOTED.finditer(q) if tokens(m.group(1))]
+    quoted = list(dict.fromkeys(quoted))
+    if 2 <= len(quoted) <= 3:
+        return quoted
+    return []

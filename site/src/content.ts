@@ -27,8 +27,9 @@ export const LIVE_METHOD =
   'A real Hermes agent was told 200 facts across earlier sessions, then asked 100 questions in fresh sessions with nothing restated. Graded by string match, no AI judge.';
 
 export const LOCOMO: BarRow[] = [
-  {label: 'Teresis + all-minilm', value: 0.654, display: '0.654', note: '22 ms', highlight: true},
-  {label: 'Teresis, no model', value: 0.637, display: '0.637', note: '8.4 ms', highlight: true},
+  {label: 'Teresis + all-minilm + reranker', value: 0.718, display: '0.718', note: '738 ms', highlight: true},
+  {label: 'Teresis + all-minilm', value: 0.664, display: '0.664', note: '37 ms', highlight: true},
+  {label: 'Teresis, no model', value: 0.641, display: '0.641', note: '17 ms', highlight: true},
   {label: 'total-agent-memory (no reranker)', value: 0.612, display: '0.612', note: '45 ms'},
   {label: 'SQLite FTS5 (BM25)', value: 0.606, display: '0.606', note: '0.5 ms'},
   {label: 'LanceDB hybrid', value: 0.589, display: '0.589', note: '19 ms'},
@@ -39,12 +40,13 @@ export const LOCOMO: BarRow[] = [
 ];
 
 export const LONGMEMEVAL: BarRow[] = [
-  {label: 'Teresis + all-minilm', value: 0.936, display: '0.936', note: '26 ms', highlight: true},
+  {label: 'Teresis + all-minilm + reranker', value: 0.949, display: '0.949', note: '2.8 s', highlight: true},
+  {label: 'Teresis + all-minilm', value: 0.944, display: '0.944', note: '51 ms', highlight: true},
   {label: 'mem0 OSS hybrid (infer=False)', value: 0.932, display: '0.932', note: '714 ms'},
   {label: 'LanceDB hybrid', value: 0.930, display: '0.930', note: '23 ms'},
   {label: 'ChromaDB', value: 0.904, display: '0.904', note: '27 ms'},
   {label: 'total-agent-memory (no reranker)', value: 0.900, display: '0.900', note: '108 ms'},
-  {label: 'Teresis, no model', value: 0.882, display: '0.882', note: '25 ms', highlight: true},
+  {label: 'Teresis, no model', value: 0.888, display: '0.888', note: '19 ms', highlight: true},
   {label: 'SQLite FTS5 (BM25)', value: 0.881, display: '0.881', note: '0.5 ms'},
   {label: 'holographic (Hermes plugin)', value: 0.859, display: '0.859', note: '23 ms'},
   {label: 'Naive LIKE, newest first', value: 0.195, display: '0.195', note: '6 ms'},

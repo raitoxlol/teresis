@@ -4,10 +4,10 @@
   "key": "teresis",
   "n": 100,
   "limit": 100,
-  "recall_any@5": 0.97,
+  "recall_any@5": 0.98,
   "recall_any@10": 0.98,
   "recall_all@10": 0.89,
-  "ndcg@10": 0.8822,
+  "ndcg@10": 0.8876,
   "by_type": {
    "knowledge-update": {
     "recall_any@5": 1.0,
@@ -20,7 +20,7 @@
     "recall_any@5": 1.0,
     "recall_any@10": 1.0,
     "recall_all@10": 0.8462,
-    "ndcg@10": 0.8878,
+    "ndcg@10": 0.8847,
     "n": 26
    },
    "single-session-assistant": {
@@ -34,7 +34,7 @@
     "recall_any@5": 1.0,
     "recall_any@10": 1.0,
     "recall_all@10": 1.0,
-    "ndcg@10": 0.753,
+    "ndcg@10": 0.8363,
     "n": 6
    },
    "single-session-user": {
@@ -45,15 +45,15 @@
     "n": 14
    },
    "temporal-reasoning": {
-    "recall_any@5": 0.8889,
+    "recall_any@5": 0.9259,
     "recall_any@10": 0.9259,
     "recall_all@10": 0.7778,
-    "ndcg@10": 0.7835,
+    "ndcg@10": 0.788,
     "n": 27
    }
   },
-  "ingest_units_per_s": 43.3,
-  "query_p50_ms": 25.45
+  "ingest_units_per_s": 80.9,
+  "query_p50_ms": 19.45
  },
  "rows": [
   {
@@ -310,7 +310,7 @@
    "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 1.0,
-   "ndcg@10": 1.0
+   "ndcg@10": 0.9197207891481876
   },
   {
    "id": "21d02d0d",
@@ -518,7 +518,7 @@
    "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 1.0,
-   "ndcg@10": 0.5
+   "ndcg@10": 1.0
   },
   {
    "id": "b6025781",
@@ -643,10 +643,10 @@
   {
    "id": "gpt4_1e4a8aec",
    "type": "temporal-reasoning",
-   "recall_any@5": 0.0,
+   "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 1.0,
-   "ndcg@10": 0.40298313359773236
+   "ndcg@10": 0.4415801103577823
   },
   {
    "id": "gpt4_ec93e27f",
@@ -734,7 +734,7 @@
    "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 0.0,
-   "ndcg@10": 0.2640681225725909
+   "ndcg@10": 0.38685280723454163
   },
   {
    "id": "gpt4_2f56ae70",
@@ -814,7 +814,7 @@
    "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 1.0,
-   "ndcg@10": 1.0
+   "ndcg@10": 0.9197207891481876
   },
   {
    "id": "gpt4_f420262d",
@@ -822,7 +822,7 @@
    "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 1.0,
-   "ndcg@10": 0.9896062251871524
+   "ndcg@10": 0.9068250379649666
   },
   {
    "id": "gpt4_68e94287",
@@ -838,7 +838,7 @@
    "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 1.0,
-   "ndcg@10": 0.8772153153380493
+   "ndcg@10": 1.0
   },
   {
    "id": "982b5123",

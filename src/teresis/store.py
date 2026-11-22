@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
 
 from . import embed as _embed
+from . import temporal as _temporal
 from . import text as T
 
 log = logging.getLogger("teresis")
@@ -156,11 +157,15 @@ class Weights:
     candidates: int = 60
     half_life_days: float = 30.0
     recency: float = 0.15  # max share of the score that recency can remove
+    temporal: float = 0.25  # boost for memories inside a date/time window named in the query
     importance: float = 0.2  # importance scales score within [1 - w/2, 1 + w/2]
     access: float = 0.02
     pinned_boost: float = 1.05
     min_trigram_overlap: float = 0.5
     min_cosine: float = 0.0
+    sub_query: float = 0.95  # scale for compound sub-query hits relative to the full query
+    rerank: float = 0.65  # blend weight for optional cross-encoder reranker (0..1)
+    rerank_pool: int = 25  # top first-stage candidates passed to optional reranker
     mmr: float = 0.0  # diversity penalty (0 = off): demotes near-copies of already-picked results
     dup_jaccard: float = 0.9
     refine_containment: float = 0.9
@@ -172,6 +177,7 @@ class MemoryStore:
         path: str | os.PathLike | None = None,
         *,
         embedder: _embed.Embedder | None | str = "env",
+        reranker: _embed.Reranker | None | str = "env",
         weights: Weights | None = None,
         clock=time.time,
     ):
@@ -179,6 +185,7 @@ class MemoryStore:
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self.embedder = _embed.from_env() if embedder == "env" else embedder
+        self.reranker = _embed.reranker_from_env() if reranker == "env" else reranker
         self.w = weights or Weights()
         self.clock = clock
         self._lock = threading.RLock()
@@ -493,6 +500,60 @@ class MemoryStore:
         if not query:
             return self._browse(base_where, base_params, k, budget_tokens, touch)
 
+        now = as_of or self.clock()
+        tw = _temporal.parse_time_window(query, now) if w.temporal > 0 else None
+        subs = T.sub_queries(query) if w.sub_query > 0 else []
+
+        qvecs: dict[str, list[float]] = {}
+        if w.vector > 0 and self.embedder:
+            try:
+                all_q = [query, *subs]
+                for qt, vec in zip(all_q, self.embedder.embed(all_q)):
+                    qvecs[qt] = vec
+            except Exception as exc:
+                log.warning("vector channel unavailable: %s", exc)
+
+        scored = self._rank_once(query, base_where, base_params, n, now, tw, qvecs.get(query), explain)
+        if subs and scored:
+            by_id = {m.id: m for m in scored}
+            top_full = scored[0].score or 1.0
+            sub_n = max(30, k * 2)
+            for sq in subs:
+                smems = self._rank_once(sq, base_where, base_params, sub_n, now, tw, qvecs.get(sq), explain)
+                if not smems:
+                    continue
+                top_sub = smems[0].score or 1.0
+                for m in smems:
+                    sc = round(((m.score or 0.0) / top_sub) * top_full * w.sub_query, 6)
+                    if m.id not in by_id or sc > (by_id[m.id].score or 0.0):
+                        m.score = sc
+                        if explain and m.why is not None:
+                            m.why["sub_query"] = sq
+                        by_id[m.id] = m
+            scored = sorted(by_id.values(), key=lambda m: m.score or 0, reverse=True)
+
+        if self.reranker and w.rerank > 0 and len(scored) > 1:
+            scored = self._rerank(query, scored, explain)
+
+        if w.mmr > 0:
+            scored = self._mmr(scored, w.mmr)
+        out = self._pack(scored, k, budget_tokens)
+        if touch and as_of is None:
+            self._touch([m.id for m in out])
+        return out
+
+    def _rank_once(
+        self,
+        query: str,
+        base_where: str,
+        base_params: list[Any],
+        n: int,
+        now: float,
+        tw: _temporal.TimeWindow | None,
+        qvec: Sequence[float] | None,
+        explain: bool,
+    ) -> list[Memory]:
+        w = self.w
         # Each channel yields {id: raw_score}; scores are normalized per channel (score / channel max)
         # and combined as a weighted mean, so a strong BM25 match is not flattened the way rank-only
         # fusion (RRF) flattens it.
@@ -525,24 +586,20 @@ class MemoryStore:
                     rows_by_id.setdefault(r["id"], r)
             channels["trigram"] = tri
 
-        if w.vector > 0 and self.embedder:
-            try:
-                qv = self.embedder.embed([query])[0]
-                vrows = self._q(
-                    f"SELECT v.memory_id, v.vec FROM vectors v JOIN memories m ON m.id=v.memory_id "
-                    f"WHERE v.model=? AND {base_where}",
-                    [self.embedder.name, *base_params],
-                )
-                hits = _embed.top_k(qv, [(r[0], r[1]) for r in vrows], n)
-                channels["vector"] = {mid: max(0.0, sim) for mid, sim in hits if sim >= w.min_cosine}
-                missing = [mid for mid in channels["vector"] if mid not in rows_by_id]
-                if missing:
-                    for r in self._q(
-                        f"SELECT * FROM memories WHERE id IN ({','.join('?' * len(missing))})", missing
-                    ):
-                        rows_by_id[r["id"]] = r
-            except Exception as exc:
-                log.warning("vector channel unavailable: %s", exc)
+        if w.vector > 0 and self.embedder and qvec is not None:
+            vrows = self._q(
+                f"SELECT v.memory_id, v.vec FROM vectors v JOIN memories m ON m.id=v.memory_id "
+                f"WHERE v.model=? AND {base_where}",
+                [self.embedder.name, *base_params],
+            )
+            hits = _embed.top_k(qvec, [(r[0], r[1]) for r in vrows], n)
+            channels["vector"] = {mid: max(0.0, sim) for mid, sim in hits if sim >= w.min_cosine}
+            missing = [mid for mid in channels["vector"] if mid not in rows_by_id]
+            if missing:
+                for r in self._q(
+                    f"SELECT * FROM memories WHERE id IN ({','.join('?' * len(missing))})", missing
+                ):
+                    rows_by_id[r["id"]] = r
 
         weights = {"fts": w.fts, "trigram": w.trigram, "vector": w.vector}
         live = {ch: s for ch, s in channels.items() if s}
@@ -554,17 +611,19 @@ class MemoryStore:
             top = max(scores.values()) or 1.0
             for mid, s in scores.items():
                 parts.setdefault(mid, {})[ch] = s / top
-        now = as_of or self.clock()
 
         scored: list[Memory] = []
         for mid, p in parts.items():
             mem = Memory.from_row(rows_by_id[mid])
             relevance = sum(weights[ch] * v for ch, v in p.items()) / total_w
-            age_days = max(0.0, now - (mem.updated_at or mem.created_at)) / DAY
+            ts = mem.updated_at or mem.created_at
+            age_days = max(0.0, now - ts) / DAY
             recency = math.exp(-math.log(2) * age_days / w.half_life_days)
+            tboost = (1.0 + w.temporal * tw.proximity(ts)) if tw is not None else 1.0
             score = (
                 relevance
                 * ((1 - w.recency) + w.recency * recency)
+                * tboost
                 * ((1 - w.importance / 2) + w.importance * mem.importance)
                 * (1 + w.access * math.log1p(mem.access_count))
                 * (w.pinned_boost if mem.pinned else 1.0)
@@ -573,14 +632,35 @@ class MemoryStore:
             if explain:
                 mem.why = {"channels": {c: round(v, 3) for c, v in p.items()},
                            "relevance": round(relevance, 4), "recency": round(recency, 4)}
+                if tw is not None:
+                    mem.why["temporal"] = round(tboost, 4)
             scored.append(mem)
         scored.sort(key=lambda m: m.score or 0, reverse=True)
-        if w.mmr > 0:
-            scored = self._mmr(scored, w.mmr)
-        out = self._pack(scored, k, budget_tokens)
-        if touch and as_of is None:
-            self._touch([m.id for m in out])
-        return out
+        return scored
+
+    def _rerank(self, query: str, mems: list[Memory], explain: bool) -> list[Memory]:
+        w = self.w
+        pool = max(2, w.rerank_pool)
+        head, tail = mems[:pool], mems[pool:]
+        try:
+            raw = self.reranker.rerank(query, [m.content for m in head])  # type: ignore[union-attr]
+        except Exception as exc:
+            log.warning("reranker unavailable: %s", exc)
+            return mems
+        if len(raw) != len(head):
+            return mems
+        lo, hi = min(raw), max(raw)
+        span = (hi - lo) or 1.0
+        top1 = (head[0].score or 1.0)
+        for m, r in zip(head, raw):
+            ce = (r - lo) / span
+            base = (m.score or 0.0) / top1
+            blended = (1.0 - w.rerank) * base + w.rerank * ce
+            m.score = round(blended * top1, 6)
+            if explain and m.why is not None:
+                m.why["rerank"] = round(ce, 4)
+        head.sort(key=lambda m: m.score or 0, reverse=True)
+        return head + tail
 
     @staticmethod
     def _mmr(mems: list[Memory], penalty: float, pool: int = 100) -> list[Memory]:

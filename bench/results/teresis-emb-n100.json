@@ -4,10 +4,10 @@
   "key": "teresis-emb",
   "n": 100,
   "limit": 100,
-  "recall_any@5": 0.98,
+  "recall_any@5": 0.99,
   "recall_any@10": 0.99,
   "recall_all@10": 0.95,
-  "ndcg@10": 0.9362,
+  "ndcg@10": 0.9435,
   "by_type": {
    "knowledge-update": {
     "recall_any@5": 1.0,
@@ -45,15 +45,15 @@
     "n": 14
    },
    "temporal-reasoning": {
-    "recall_any@5": 0.9259,
+    "recall_any@5": 0.963,
     "recall_any@10": 0.963,
     "recall_all@10": 0.8519,
-    "ndcg@10": 0.8414,
+    "ndcg@10": 0.8686,
     "n": 27
    }
   },
-  "ingest_units_per_s": 5.7,
-  "query_p50_ms": 25.67
+  "ingest_units_per_s": 48.7,
+  "query_p50_ms": 50.71
  },
  "rows": [
   {
@@ -646,7 +646,7 @@
    "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 1.0,
-   "ndcg@10": 0.5912352048230277
+   "ndcg@10": 0.8315546295836225
   },
   {
    "id": "gpt4_ec93e27f",
@@ -710,7 +710,7 @@
    "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 0.0,
-   "ndcg@10": 0.2640681225725909
+   "ndcg@10": 0.6131471927654584
   },
   {
    "id": "gpt4_8279ba03",
@@ -731,10 +731,10 @@
   {
    "id": "gpt4_68e94288",
    "type": "temporal-reasoning",
-   "recall_any@5": 0.0,
+   "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 0.0,
-   "ndcg@10": 0.21840743681816419
+   "ndcg@10": 0.23719771276929622
   },
   {
    "id": "gpt4_2f56ae70",
@@ -830,7 +830,7 @@
    "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 1.0,
-   "ndcg@10": 0.8503449055347546
+   "ndcg@10": 1.0
   },
   {
    "id": "gpt4_59149c77",
@@ -854,7 +854,7 @@
    "recall_any@5": 1.0,
    "recall_any@10": 1.0,
    "recall_all@10": 0.0,
-   "ndcg@10": 0.4776237035032179
+   "ndcg@10": 0.4525081529734507
   }
  ]
 }

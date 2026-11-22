@@ -178,6 +178,49 @@ class StoreTests(unittest.TestCase):
         self.assertIn("vector", hits[0].why["channels"])
         s.close()
 
+    def test_possessive_and_contraction_tokens(self):
+        m = self.s.remember("Caroline uses Neovim for Rust", scope="u")
+        hits = self.s.recall("What is Caroline's editor?", scope="u")
+        self.assertTrue(hits and hits[0].id == m.id)
+
+    def test_temporal_window_boost(self):
+        import datetime as dt
+        t_old = dt.datetime(2023, 1, 16, 12, 0, tzinfo=dt.timezone.utc).timestamp()
+        t_other = dt.datetime(2022, 10, 5, 12, 0, tzinfo=dt.timezone.utc).timestamp()
+        t_now = dt.datetime(2023, 2, 1, 12, 0, tzinfo=dt.timezone.utc).timestamp()
+        clock = {"t": t_other}
+        s = MemoryStore(Path(self.dir.name) / "tmp.db", embedder=None, clock=lambda: clock["t"])
+        s.remember("Attended an art event at the Civic Hall", scope="u")
+        clock["t"] = t_old
+        m_two_weeks = s.remember("Attended an art event at the River Gallery", scope="u")
+        clock["t"] = t_now
+        hits = s.recall("Where was the art event two weeks ago?", scope="u", explain=True)
+        self.assertEqual(hits[0].id, m_two_weeks.id)
+        self.assertGreater(hits[0].why["temporal"], 1.1)
+        s.close()
+
+    def test_compound_sub_query_retrieval(self):
+        for i in range(6):
+            self.s.remember(f"Project Atlas milestone note {i} about database migration", scope="u")
+        m_helios = self.s.remember("Project Helios launched on Tuesday", scope="u")
+        hits = self.s.recall("Which started first, 'Project Atlas' or 'Project Helios'?", scope="u", k=3)
+        self.assertIn(m_helios.id, [h.id for h in hits[:3]])
+
+    def test_pluggable_reranker(self):
+        class FakeReranker:
+            name = "fake-ce"
+
+            def rerank(self, query, docs):
+                return [10.0 if "single parent" in d else -5.0 for d in docs]
+
+        s = MemoryStore(Path(self.dir.name) / "rr.db", embedder=None, reranker=FakeReranker())
+        s.remember("Caroline talked about relationship advice with friends", scope="u")
+        m_target = s.remember("Caroline said it will be tough as a single parent", scope="u")
+        hits = s.recall("Caroline relationship status", scope="u", explain=True)
+        self.assertEqual(hits[0].id, m_target.id)
+        self.assertIn("rerank", hits[0].why)
+        s.close()
+
 
 class McpTests(unittest.TestCase):
     def test_protocol_roundtrip(self):

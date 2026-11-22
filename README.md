@@ -74,13 +74,14 @@ evaluated once on the untouched 100-question test split (seed 13):
 
 | System | recall_any@5 | recall_all@10 | NDCG@10 | ingest rounds/s | query p50 |
 | --- | --- | --- | --- | --- | --- |
-| **teresis + all-minilm** | **0.98** | 0.95 | **0.936** | 5.7* | 26 ms** |
+| **teresis + all-minilm + MiniLM reranker** | **0.99** | **0.96** | **0.949** | cached* | 2.8 s** |
+| **teresis + all-minilm** | **0.99** | 0.95 | 0.944 | cached* | 51 ms** |
 | mem0 OSS 2.2.1 hybrid (BM25 + spaCy + all-minilm, infer=False) | 0.97 | 0.93 | 0.932 | 60* | 714 ms |
 | LanceDB hybrid (BM25 + all-minilm, RRF) | 0.97 | 0.93 | 0.930 | cached* | 23 ms |
-| ChromaDB (all-minilm) | **0.98** | **0.96** | 0.904 | 15.9* | 27 ms |
-| mem0 OSS 2.2.1 (vector only, all-minilm, infer=False) | **0.98** | **0.96** | 0.903 | 8.3* | 366 ms |
+| ChromaDB (all-minilm) | 0.98 | **0.96** | 0.904 | 15.9* | 27 ms |
+| mem0 OSS 2.2.1 (vector only, all-minilm, infer=False) | 0.98 | **0.96** | 0.903 | 8.3* | 366 ms |
 | total-agent-memory 14.10 (FastEmbed + FTS + RRF, no reranker) | 0.97 | 0.92 | 0.900 | 10.8 | 108 ms |
-| teresis (no model) | 0.97 | 0.89 | 0.882 | 43 | 25 ms |
+| **teresis (no model)** | 0.98 | 0.89 | 0.888 | 81 | 19 ms |
 | SQLite FTS5 (BM25, porter) | 0.96 | 0.87 | 0.881 | 18,983 | 0.5 ms |
 | holographic (Hermes plugin) | 0.94 | 0.85 | 0.859 | 7.2 | 23 ms |
 | naive LIKE, newest first | 0.35 | 0.18 | 0.195 | — | 6 ms |
@@ -128,8 +129,9 @@ Everything ran on nucbox (CPU only).
 
 | System | recall_any@5 | recall_any@10 | recall_all@10 | NDCG@10 | ingest turns/s | query p50 |
 | --- | --- | --- | --- | --- | --- | --- |
-| **teresis + all-minilm** | **0.654** | **0.727** | **0.588** | **0.516** | 63 | 22 ms |
-| teresis (no model) | 0.637 | 0.712 | 0.585 | 0.512 | 422 | 8.4 ms |
+| **teresis + all-minilm + MiniLM reranker** | **0.718** | **0.758** | **0.624** | **0.589** | cached* | 738 ms** |
+| **teresis + all-minilm** | 0.664 | 0.732 | 0.594 | 0.520 | 22** | 37 ms** |
+| **teresis (no model)** | 0.641 | 0.716 | 0.587 | 0.516 | 297 | 17 ms** |
 | total-agent-memory 14.10 (FastEmbed + FTS + RRF, no reranker) | 0.612 | 0.696 | 0.572 | 0.488 | 12.5 | 45 ms |
 | SQLite FTS5 (BM25, porter) | 0.606 | 0.689 | 0.566 | 0.485 | 147,213 | 0.5 ms |
 | LanceDB hybrid (BM25 + all-minilm, RRF) | 0.589 | 0.686 | 0.555 | 0.457 | 63 | 19 ms |
@@ -143,9 +145,10 @@ recall_any@5 by category:
 
 | System | multi-hop (282) | temporal (321) | open-domain (92) | single-hop (841) |
 | --- | --- | --- | --- | --- |
-| teresis + all-minilm | **0.603** | **0.707** | 0.359 | **0.684** |
-| teresis (no model) | 0.539 | 0.685 | **0.380** | 0.680 |
-| total-agent-memory (no reranker) | 0.443 | 0.685 | **0.380** | 0.666 |
+| teresis + all-minilm + MiniLM reranker | **0.674** | **0.763** | **0.413** | **0.749** |
+| teresis + all-minilm | 0.610 | 0.723 | 0.359 | 0.693 |
+| teresis (no model) | 0.543 | 0.692 | 0.380 | 0.684 |
+| total-agent-memory (no reranker) | 0.443 | 0.685 | 0.380 | 0.666 |
 | SQLite FTS5 (BM25) | 0.457 | 0.682 | 0.359 | 0.653 |
 | LanceDB hybrid | 0.560 | 0.654 | 0.348 | 0.601 |
 | mem0 OSS hybrid (infer=False) | 0.539 | 0.660 | 0.337 | 0.560 |
