@@ -84,9 +84,9 @@ export const STEPS: Step[] = [
 ];
 
 export const SNIPPETS = {
-  Hermes: `pip install teresis
+  Hermes: `pip install git+https://github.com/raitoxlol/teresis.git
 teresis hermes install && hermes config set memory.provider teresis`,
-  MCP: `pip install teresis
+  MCP: `pip install git+https://github.com/raitoxlol/teresis.git
 claude mcp add teresis -- teresis serve --scope project/atlas --scope user`,
   HTTP: `teresis http --port 7077 --scope global &
 curl -s localhost:7077/tools/memory_recall \\
@@ -116,6 +116,6 @@ export const FAQ = [
   },
   {
     q: 'How is it licensed?',
-    a: 'Teresis is open source under the Apache 2.0 license. Install it with pip or browse the source on GitHub.',
+    a: 'Teresis is open source under the Apache 2.0 license. Install it from GitHub with pip or browse the source on GitHub.',
   },
 ];
