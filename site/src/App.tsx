@@ -46,7 +46,7 @@ function Install({compact = false}: {compact?: boolean}) {
           </button>
         )}
       </div>
-      <p className="note">Apache 2.0 open source · zero required dependencies.</p>
+      {!compact && <p className="note">Apache 2.0 · no required dependencies.</p>}
     </div>
   );
 }
@@ -115,7 +115,7 @@ function Demo({kind}: {kind: Step['demo']}) {
         <ul className="demo rows">
           <li>
             <span>recall p50 · no model (LoCoMo)</span>
-            <b>8.4 ms</b>
+            <b>{LOCOMO.find((row) => row.label === 'Teresis, no model')?.note}</b>
           </li>
           <li>
             <span>network calls by default</span>
@@ -275,8 +275,8 @@ export function App() {
 
         <section className="installs" id="install">
           <div className="wrap">
-            <h2>Plugs into what you already run.</h2>
-            <p className="lede">A native Hermes memory provider, an MCP server, a local HTTP API and a Python API, all sharing one store.</p>
+            <h2>Four interfaces, one file.</h2>
+            <p className="lede">A Hermes memory provider, an MCP server, a local HTTP API, and a Python API. They share one SQLite file.</p>
             <Install />
           </div>
         </section>
@@ -296,8 +296,8 @@ export function App() {
         <section className="close" id="join" ref={closeRef}>
           <div className="wrap">
             <Mark className="close-mark" />
-            <h2>Keep what your agents learn.</h2>
-            <p className="lede">Open source under Apache 2.0. Leave your email for release notes and updates.</p>
+            <h2>The file stays on your machine.</h2>
+            <p className="lede">Apache 2.0. Email is for release notes.</p>
             <Waitlist id="email-close" />
           </div>
         </section>

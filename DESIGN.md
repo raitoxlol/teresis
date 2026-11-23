@@ -263,9 +263,10 @@ The lotus is drawn in code from generated paths on the 30-60-90 grid. Each petal
 - **Do** build new marks, icons and illustrations on the 30-60-90 lattice, with corners filleted at radius 4 in mark units.
 - **Do** separate depth with Lotus-Leaf Field and Pond Deep plus Etched Rule hairlines, not shadows.
 - **Do** let motion assemble (grid first, then solid) with `cubic-bezier(0.16, 1, 0.3, 1)`, and show the finished state under reduced motion.
+- **Do** keep the enchantment sweep on two elements only: the ochre hero line ("Teresis keeps.") and the ochre action (nav pill and waitlist buttons). It is a slow purple band over the existing ochre, CSS gradients clipped to the glyphs or painted in the button background. `prefers-reduced-motion` removes the sweep and leaves a static lavender tint. It is not a third brand color.
 
 ### Don't:
-- **Don't** use a dark dev-tool hero (terminal window, neon glow, gradient mesh), and don't use the cream editorial page.
+- **Don't** use a dark dev-tool hero (terminal window, neon glow, gradient mesh), and don't use the cream editorial page. The enchantment sweep above is the only glow, and it stays inside the hero line and the ochre action.
 - **Don't** use Fragment Mono for labels, captions, buttons or headings.
 - **Don't** present facts as a big-number stat trio; use direct-labelled bars or mono rows.
 - **Don't** add a second filled ochre button, a third interface radius or a shadow on a panel.

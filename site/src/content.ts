@@ -6,7 +6,7 @@ export type BarRow = {label: string; value: number; display: string; note?: stri
 export const HERO = {
   line1: 'Your agents forget.',
   line2: 'Teresis keeps.',
-  sub: 'Local memory for autonomous agents, native to Hermes and shared with Claude Code, Codex and every MCP client. Fully local by default.',
+  sub: 'Shared by Hermes, Claude Code, Codex, and other MCP clients. One SQLite file. Zero LLM calls on write.',
   proof: {teresis: '100/100', stock: '60/100'},
 };
 
@@ -62,27 +62,27 @@ export type Step = {title: string; body: string; demo: 'remember' | 'supersede' 
 export const STEPS: Step[] = [
   {
     title: 'One file keeps it all.',
-    body: 'Every fact, preference and decision your agents learn lands in one SQLite file, one store shared by every agent you run. No server, no account, no dependencies.',
+    body: 'Facts, preferences, and decisions go in one SQLite file, ~/.local/share/teresis/memory.db. Every agent shares that file. No server, no account, and no required dependencies.',
     demo: 'remember',
   },
   {
     title: 'New facts replace old ones.',
-    body: 'Agents repeat themselves and change their minds. A repeated fact reinforces; a keyed fact supersedes its old value, and history keeps what was true before. Secrets are redacted on write.',
+    body: 'A repeated fact reinforces the same row. A keyed fact replaces the old value and keeps the previous one in history. Secrets are redacted on write.',
     demo: 'supersede',
   },
   {
-    title: 'Projects never leak.',
-    body: 'Scopes are paths: global, project/atlas, hermes/main. Recall sees a scope and its parents, never its siblings; subagents and crons run read-only.',
+    title: 'Siblings are never read.',
+    body: 'Scopes are paths: global, user, project/atlas. Recall reads a scope and its parents, never a sibling. Subagents and crons can run read-only.',
     demo: 'scopes',
   },
   {
-    title: 'It finds what you meant.',
-    body: 'BM25 over stemmed text, trigram matching for typos, and optional embeddings from Ollama or any OpenAI-compatible server for paraphrases.',
+    title: 'Stems, typos, then vectors.',
+    body: 'BM25 runs over a Porter-stemmed index. Trigrams catch typos. Embeddings from Ollama or any OpenAI-compatible server are optional, for paraphrases.',
     demo: 'channels',
   },
   {
     title: 'Local and deterministic.',
-    body: 'Zero LLM calls per turn, so writes are exact and repeatable. WAL mode lets several agents share one store; the test suite runs four processes writing at once.',
+    body: 'Writes make zero LLM calls, so they stay exact and repeatable. WAL mode lets several agents share the file. The test suite runs four processes writing at once.',
     demo: 'local',
   },
 ];
@@ -116,10 +116,10 @@ export const FAQ = [
   },
   {
     q: 'Can several agents share one memory?',
-    a: 'Yes. Scopes keep them apart where they should be apart, and SQLite WAL mode lets several processes write at once. Subagents and crons can run read-only, so background work never poisons memory.',
+    a: 'Yes. Scopes keep projects apart, and SQLite WAL lets several processes write at once. Subagents and crons can run read-only.',
   },
   {
     q: 'How is it licensed?',
-    a: 'Teresis is open source under the Apache 2.0 license. Install it from GitHub with pip or browse the source on GitHub.',
+    a: 'Apache 2.0. Install with pip from GitHub, or read the source there.',
   },
 ];
