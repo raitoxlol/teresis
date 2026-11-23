@@ -27,7 +27,7 @@ from . import extract as _extract
 from . import secrets as _secrets
 from .mcp import TOOLS, Server
 from .store import MemoryStore, default_db_path
-from .text import containment, term_set
+from .text import containment, term_set, tokens
 
 log = logging.getLogger("teresis.hermes")
 
@@ -56,6 +56,10 @@ DEFAULTS: Dict[str, Any] = {
     "extra_scopes": "user",    # comma-separated scopes also searched on recall
     "prefetch_k": 6,
     "prefetch_budget_tokens": 700,
+    # Lexical ranking normalizes the best hit to ~1.0, so a shared weak word
+    # ("want", "like") looks relevant. Prefetch also requires a distinctive
+    # term overlap; this floor drops the leftovers. Tool recall stays open.
+    "prefetch_min_score": 0.45,
     "capture_turns": True,
     "episode_ttl_days": 30,
     "auto_extract": True,
@@ -80,6 +84,49 @@ def _truthy(v: Any) -> bool:
 def _trim(text: str, n: int) -> str:
     text = (text or "").strip()
     return text if len(text) <= n else text[: n - 1] + "…"
+
+
+# Unstemmed tokens that are too common to justify injecting a memory on their own.
+# Inflected forms are included so "likes" does not sneak past "like".
+_PREFETCH_WEAK = frozenset(
+    t + suffix
+    for t in """like want need order get make use have take give please help really just more some also
+    thing things stuff good bad new one user call write read file run set put see look time day
+    way work said first later check about would could should done yeah yes okay thanks something
+    anything remotely table place can""".split()
+    for suffix in ("", "s", "es", "ed", "ing")
+)
+
+
+def _term_covers(query_tok: str, memory_tok: str) -> bool:
+    """True when the memory token is the query token or a light inflection of it.
+
+    Query "rolls" does not cover memory "roll". That direction is how lexical
+    search pulled "roll back" into a tuna-rolls turn.
+    """
+    if query_tok == memory_tok:
+        return True
+    if len(query_tok) < 4 or not memory_tok.startswith(query_tok):
+        return False
+    return memory_tok[len(query_tok):] in {"s", "es", "ed", "ing", "d"}
+
+
+def _prefetch_relevant(query: str, content: str, *, floor: float, score: float | None) -> bool:
+    """Prefetch injection gate. Tool recall does not use this."""
+    if (score or 0) < floor:
+        return False
+    distinctive = [t for t in tokens(query) if len(t) >= 4 and t not in _PREFETCH_WEAK]
+    if not distinctive:
+        return False
+    memory_toks = [t for t in tokens(content) if t not in _PREFETCH_WEAK]
+    return any(_term_covers(q, m) for q in distinctive for m in memory_toks)
+
+
+def _min_score(config: Dict[str, Any], default: float = 0.45) -> float:
+    try:
+        return float(config.get("prefetch_min_score", default))
+    except (TypeError, ValueError):
+        return default
 
 
 def _openai_schemas() -> List[Dict[str, Any]]:
@@ -192,12 +239,13 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             query = _secrets.redact_secrets(query)[0]  # keep raw secrets out of remote embedder calls
             facts = self._store.recall(query, scope=self._read_scopes, k=k, budget_tokens=budget,
                                        exclude_kinds=["episode"])
-            facts = [m for m in facts if (m.score or 0) >= 0.15]
+            floor = _min_score(self._config)
+            facts = [m for m in facts if _prefetch_relevant(query, m.content, floor=floor, score=m.score)]
             blocks = [self._format(facts, "Long-term memory (teresis)")] if facts else []
             if _truthy(self._config.get("capture_turns", True)):
                 eps = self._store.recall(query, scope=[self._scope], inherit=False, kinds=["episode"], k=2)
                 known = [" ".join(m.content.casefold().split()) for m in facts]
-                eps = [m for m in eps if (m.score or 0) >= 0.3
+                eps = [m for m in eps if _prefetch_relevant(query, m.content, floor=max(0.3, floor), score=m.score)
                        and not any(k and k.removeprefix("user: ") in " ".join(m.content.casefold().split()) for k in known)]
                 if eps:
                     blocks.append(self._format(eps, "Related past conversation"))
@@ -266,7 +314,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         saved = []
         for c in _extract.extract(text):
             scope = "user" if c.kind == "preference" else self._scope
-            content = c.content if not c.content.lower().startswith(("i ", "i'm", "my ")) else f"User: {c.content}"
+            content = c.content
             try:
                 if self._write_or_skip(content, scope=scope, kind=c.kind, importance=c.importance,
                                        source=source, meta={"session_id": self._session_id}):
@@ -283,18 +331,21 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         assistant_content = assistant_content if isinstance(assistant_content, str) else str(assistant_content or "")
         user_content = _secrets.redact_secrets(user_content)[0]
         assistant_content = _secrets.redact_secrets(assistant_content)[0]
+        authored = _extract.user_authored_text(user_content)
+        if not authored.strip():
+            return
         try:
-            if _truthy(self._config.get("capture_turns", True)) and not _is_trivial(user_content):
+            if _truthy(self._config.get("capture_turns", True)) and not _is_trivial(authored):
                 who = (turn_author or {}).get("name") or "User"
                 self._store.remember(
-                    f"{who}: {_trim(user_content, 600)}\nAssistant: {_trim(assistant_content, 900)}",
+                    f"{who}: {_trim(authored, 600)}\nAssistant: {_trim(assistant_content, 900)}",
                     scope=self._scope, kind="episode", importance=0.2,
                     ttl_days=float(self._config.get("episode_ttl_days", 30)) or None,
                     source=f"hermes:{self._platform or 'turn'}",
                     meta={"session_id": session_id or self._session_id},
                 )
             if _truthy(self._config.get("auto_extract", True)):
-                self._save_extracted(user_content, "hermes:auto-extract")
+                self._save_extracted(authored, "hermes:auto-extract")
         except Exception as exc:
             log.debug("teresis sync_turn failed: %s", exc)
 
@@ -331,9 +382,14 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             return ""
         saved: List[str] = []
         for msg in messages or []:
+            if msg.get("role") != "user":
+                continue
             content = msg.get("content")
-            if msg.get("role") == "user" and isinstance(content, str) and "summary" not in content[:80].lower():
-                saved += self._save_extracted(content, "hermes:pre-compress")
+            if not isinstance(content, str):
+                continue
+            authored = _extract.user_authored_text(content)
+            if authored:
+                saved += self._save_extracted(authored, "hermes:pre-compress")
         if not saved:
             return ""
         return "Saved to long-term memory before compression:\n" + "\n".join(f"- {s}" for s in saved[:20])
@@ -388,6 +444,9 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
              "default": 30, "minimum": 0},
             {"key": "prefetch_k", "description": "Max memories injected per turn.", "type": "integer", "default": 6,
              "minimum": 0, "maximum": 30},
+            {"key": "prefetch_min_score", "description": "Score floor for automatic prefetch. Tool recall is not filtered. "
+             "Lexical search normalizes the best hit, so also require a distinctive shared term.",
+             "type": "number", "default": 0.45, "minimum": 0, "maximum": 1},
         ]
 
     def save_config(self, values: Dict[str, Any], hermes_home: str) -> None:
