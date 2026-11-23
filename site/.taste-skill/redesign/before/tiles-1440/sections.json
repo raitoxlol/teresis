@@ -1,0 +1,140 @@
+{
+ "url": "http://127.0.0.1:5300/index.html",
+ "views": {
+  "desktop": {
+   "width": 1440,
+   "height": 900,
+   "navH": 0,
+   "scrollHeight": 9187,
+   "screens": 10.21,
+   "sections": [
+    {
+     "n": 1,
+     "tag": "section",
+     "id": "how",
+     "cls": "story",
+     "top": 900,
+     "h": 4195,
+     "hScreens": 4.66,
+     "offGrid": 595,
+     "tiles": [
+      {
+       "file": "desktop-sec-01-a.jpg",
+       "scrollY": 900
+      },
+      {
+       "file": "desktop-sec-01-b.jpg",
+       "scrollY": 1800
+      },
+      {
+       "file": "desktop-sec-01-c.jpg",
+       "scrollY": 2700
+      },
+      {
+       "file": "desktop-sec-01-d.jpg",
+       "scrollY": 3600
+      },
+      {
+       "file": "desktop-sec-01-e.jpg",
+       "scrollY": 4195
+      }
+     ]
+    },
+    {
+     "n": 2,
+     "tag": "section",
+     "id": "proof",
+     "cls": "proof",
+     "top": 5095,
+     "h": 1845,
+     "hScreens": 2.05,
+     "offGrid": 45,
+     "tiles": [
+      {
+       "file": "desktop-sec-02-a.jpg",
+       "scrollY": 5095
+      },
+      {
+       "file": "desktop-sec-02-b.jpg",
+       "scrollY": 5995
+      },
+      {
+       "file": "desktop-sec-02-c.jpg",
+       "scrollY": 6040
+      }
+     ]
+    },
+    {
+     "n": 3,
+     "tag": "section",
+     "id": "install",
+     "cls": "installs",
+     "top": 6940,
+     "h": 695,
+     "hScreens": 0.77,
+     "offGrid": 695,
+     "tiles": [
+      {
+       "file": "desktop-sec-03-a.jpg",
+       "scrollY": 6940
+      }
+     ]
+    },
+    {
+     "n": 4,
+     "tag": "section",
+     "id": "",
+     "cls": "faq",
+     "top": 7636,
+     "h": 831,
+     "hScreens": 0.92,
+     "offGrid": 831,
+     "tiles": [
+      {
+       "file": "desktop-sec-04-a.jpg",
+       "scrollY": 7636
+      }
+     ]
+    },
+    {
+     "n": 5,
+     "tag": "section",
+     "id": "join",
+     "cls": "close",
+     "top": 8466,
+     "h": 641,
+     "hScreens": 0.71,
+     "offGrid": 641,
+     "tiles": [
+      {
+       "file": "desktop-sec-05-a.jpg",
+       "scrollY": 8287,
+       "cutTop": 179,
+       "height": 641
+      }
+     ]
+    },
+    {
+     "n": 6,
+     "tag": "footer",
+     "id": "",
+     "cls": "foot",
+     "top": 9108,
+     "h": 79,
+     "hScreens": 0.09,
+     "offGrid": 79,
+     "tiles": [
+      {
+       "file": "desktop-sec-06-a.jpg",
+       "scrollY": 8287,
+       "cutTop": 821,
+       "height": 79
+      }
+     ]
+    }
+   ],
+   "consoleErrors": []
+  }
+ },
+ "at": "2026-11-23T04:50:40.318Z"
+}

@@ -3,3 +3,11 @@ dist
 themes/teresis/*.png
 themes/teresis/preview.html
 dist-single
+.taste-skill/chrome-*
+.taste-skill/build*
+dist-check
+.taste-skill/shots
+.taste-skill/gate
+.taste-skill/rendered.html
+.taste-skill/*.txt
+!.taste-skill/brand-css.txt
