@@ -110,6 +110,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     b = sub.add_parser("bench", help="run the retrieval benchmark", parents=[common])
     b.add_argument("--scale", type=int, default=10000, help="distractor memories for the latency test")
+    sc = sub.add_parser("scrub", help="find bad auto-extracted rows (dry-run unless --apply)", parents=[common])
+    sc.add_argument("--apply", action="store_true",
+                    help="soft-delete flagged rows. Default is a dry-run and never runs on its own.")
     return p
 
 
@@ -176,6 +179,32 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(store.maintain(vacuum=args.vacuum)))
         elif args.cmd == "embed":
             print(f"embedded {store.embed_missing()} memories")
+        elif args.cmd == "scrub":
+            from .extract import extraction_problem
+
+            flagged = []
+            for rec in store.export():
+                if rec.get("deleted_at"):
+                    continue
+                reason = extraction_problem(rec.get("content") or "", kind=rec.get("kind") or "",
+                                            source=rec.get("source") or "")
+                if reason:
+                    flagged.append({"id": rec["id"], "kind": rec.get("kind"), "source": rec.get("source"),
+                                    "reason": reason, "content": rec.get("content")})
+            removed = 0
+            if args.apply:
+                for row in flagged:
+                    removed += store.forget(row["id"]) or 0
+            payload = {"dry_run": not args.apply, "flagged": len(flagged), "removed": removed, "rows": flagged}
+            if args.json:
+                print(json.dumps(payload, indent=2))
+            else:
+                mode = "applied" if args.apply else "dry-run"
+                tail = f", soft-deleted {removed}" if args.apply else ", pass --apply to soft-delete"
+                print(f"scrub ({mode}): {len(flagged)} bad extracted rows{tail}")
+                if not args.apply:
+                    for row in flagged:
+                        print(f"{row['id']}  [{row['reason']}] {row['content'][:160]}")
         elif args.cmd == "export":
             for rec in store.export():
                 sys.stdout.write(json.dumps(rec) + "\n")

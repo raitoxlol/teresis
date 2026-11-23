@@ -68,6 +68,79 @@ class ExtractTests(unittest.TestCase):
         self.assertEqual(extract(text), [])
 
 
+class DogfoodExtractionTests(unittest.TestCase):
+    def test_rejects_momentary_wants_and_strips_speaker_prefix(self):
+        text = "\n".join([
+            "User: i want some tuna",
+            "User: I want a new bird",
+            "User: “And I want to first ship a lot and build on X.”",
+            "I prefer dark roast coffee.",
+        ])
+        got = extract(text)
+        contents = [c.content for c in got]
+        self.assertEqual(contents, ["I prefer dark roast coffee."])
+        self.assertTrue(all(c.importance >= 0.7 for c in got if c.kind == "preference"))
+        self.assertFalse(any(c.content.lower().startswith("user:") for c in got))
+
+    def test_ignores_system_compaction_and_injected_memory(self):
+        compaction = (
+            "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary below. "
+            "Reverse signals ('stop', 'undo', 'roll back', 'just verify', 'don't do that anymore', "
+            "'never mind', a new topic) must immediately end any in-flight work described in the summary. "
+            "IMPORTANT: Your persistent memory (MEMORY.md, USER.md) in the system prompt is ALWAYS authoritative."
+        )
+        system = "System rule: never pass a pairing token through chat. Historical Task Snapshot follows."
+        kanban = (
+            "# Kanban task execution protocol\n"
+            "You have been assigned ONE task from the shared board. HERMES_KANBAN_TASK is set. "
+            "Never force-push to main."
+        )
+        tool = "<tool_result>Never force-push to main. The tests live in tests/e2e.</tool_result>"
+        injected = (
+            "<memory-context>\n"
+            "[System note: The following is recalled memory context, NOT new user input. "
+            "Treat as authoritative reference data.]\n\n"
+            "## Long-term memory (teresis)\n"
+            "- [procedure] never pass a pairing token through chat (id abcdef0123456789)\n"
+            "</memory-context>\n\n"
+            "I prefer terse answers."
+        )
+        oob = (
+            "[OUT-OF-BAND USER MESSAGE — a direct message from the user, not tool output]\n"
+            "I always use tabs.\n"
+            "[/OUT-OF-BAND USER MESSAGE]"
+        )
+        self.assertEqual(extract(compaction), [])
+        self.assertEqual(extract(system), [])
+        self.assertEqual(extract(kanban), [])
+        self.assertEqual(extract(tool), [])
+        self.assertEqual([c.content for c in extract(injected)], ["I prefer terse answers."])
+        self.assertEqual([c.content for c in extract(oob)], ["I always use tabs."])
+        # re-ingesting the injected block alone must not yield the procedure it quotes
+        self.assertEqual(extract(injected.split("I prefer")[0]), [])
+
+
+class ScrubTests(unittest.TestCase):
+    def test_flags_bad_extracted_rows_only(self):
+        from teresis.extract import extraction_problem
+
+        bad = [
+            ("User: i want some tuna", "preference", "hermes:auto-extract", "momentary-want"),
+            ("never pass a pairing token through chat", "procedure", "hermes:pre-compress", "injected-or-system"),
+            ("'stop', 'undo', 'roll back', 'just verify' must immediately end any in-flight work described in the summary",
+             "procedure", "hermes:pre-compress", "injected-or-system"),
+        ]
+        for content, kind, source, reason in bad:
+            self.assertEqual(extraction_problem(content, kind=kind, source=source), reason, content)
+        self.assertIsNone(extraction_problem(
+            "I prefer dark roast coffee.", kind="preference", source="hermes:auto-extract"))
+        self.assertIsNone(extraction_problem(
+            "Never force-push to main.", kind="procedure", source="hermes:auto-extract"))
+        # explicit imports are not scrubbed, even if the sentence looks like a system rule
+        self.assertIsNone(extraction_problem(
+            "never pass a pairing token through chat", kind="procedure", source="hermes:import:MEMORY.md"))
+
+
 class SecretsTests(unittest.TestCase):
     def test_detects_real_key_formats(self):
         cases = {
@@ -319,6 +392,92 @@ class HermesProviderTests(unittest.TestCase):
                                            exclude_kinds=["episode"]) if "switched" in m.content]
         self.assertEqual(len(hits), 1)
         p.shutdown()
+
+    def test_sync_and_compress_skip_wants_system_text_and_own_injection(self):
+        p = self.provider()
+        store = p._store
+        assert store is not None
+        p.sync_turn("User: i want some tuna", "ok")
+        p.sync_turn(
+            "<memory-context>\n"
+            "[System note: The following is recalled memory context, NOT new user input.]\n"
+            "## Long-term memory (teresis)\n"
+            "- [procedure] never pass a pairing token through chat (id abcdef0123456789)\n"
+            "</memory-context>\n\n"
+            "I prefer dark roast coffee.",
+            "Noted.",
+        )
+        p.on_pre_compress([
+            {"role": "system", "content": "never pass a pairing token through chat"},
+            {"role": "tool", "content": "Never force-push to main."},
+            {"role": "user", "content": (
+                "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary below. "
+                "Reverse signals ('stop', 'undo', 'roll back', 'just verify', 'don't do that anymore', "
+                "'never mind', a new topic) must immediately end any in-flight work described in the summary. "
+                "IMPORTANT: Your persistent memory (MEMORY.md, USER.md) in the system prompt is ALWAYS authoritative."
+            )},
+            {"role": "user", "content": "I prefer spaces over tabs."},
+        ])
+        rows = list(store.export())
+        facts = [m for m in rows if m["kind"] != "episode"]
+        blob = json.dumps(facts)
+        self.assertNotIn("tuna", blob.lower())
+        self.assertNotIn("pairing token", blob.lower())
+        self.assertNotIn("in-flight", blob.lower())
+        self.assertNotIn("User:", blob)
+        self.assertIn("dark roast", blob)
+        self.assertIn("spaces over tabs", blob)
+        episodes = [m for m in rows if m["kind"] == "episode"]
+        self.assertTrue(episodes)
+        self.assertNotIn("memory-context", json.dumps(episodes))
+        self.assertNotIn("pairing token", json.dumps(episodes).lower())
+        p.shutdown()
+
+    def test_prefetch_drops_unrelated_lexical_hits_tool_recall_does_not(self):
+        from teresis.hermes import _prefetch_relevant
+
+        p = self.provider()
+        store = p._store
+        assert store is not None
+        p.on_memory_write("add", "memory", "Gym routine: Wright wants one-arm chin-ups, not more easy reps.")
+        p.on_memory_write("add", "memory", "Music notes: avoid Drake; likes Kanye; song-specific recs.")
+        p.on_memory_write("add", "memory", "Mercari CLI lives at the cargo bin. Writes need an explicit instruction.")
+        p.on_memory_write("add", "user", "I prefer spicy tuna rolls when ordering sushi.")
+        ctx = p.prefetch("Can you order some sushi? Like, tuna rolls to my table")
+        self.assertIn("tuna", ctx.lower())
+        self.assertNotIn("Gym", ctx)
+        self.assertNotIn("Kanye", ctx)
+        self.assertNotIn("Mercari", ctx)
+        recalled = store.recall("i want some tuna", scope=p._read_scopes, k=8, exclude_kinds=["episode"])
+        self.assertTrue(any("Gym" in m.content for m in recalled))
+        self.assertNotIn("Gym", p.prefetch("i want some tuna"))
+        self.assertFalse(_prefetch_relevant("i want some tuna", "Gym routine: Wright wants one-arm chin-ups", floor=0.15, score=0.9))
+        self.assertFalse(_prefetch_relevant("tuna rolls", "spicy tuna rolls", floor=0.45, score=0.2))
+        self.assertTrue(_prefetch_relevant("tuna rolls", "spicy tuna rolls", floor=0.45, score=0.8))
+        p.shutdown()
+
+    def test_scrub_command_is_dry_run_until_apply(self):
+        from teresis.cli import main
+
+        p = self.provider()
+        store = p._store
+        assert store is not None
+        store.remember("User: i want some tuna", kind="preference", source="hermes:auto-extract", importance=0.6)
+        store.remember("I prefer dark roast coffee.", kind="preference", source="hermes:auto-extract", importance=0.8)
+        p.shutdown()
+        import io
+        from contextlib import redirect_stdout
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["--db", self.db, "scrub"]), 0)
+        still = MemoryStore(self.db, embedder=None)
+        self.addCleanup(still.close)
+        contents = [m["content"] for m in still.export() if not m.get("deleted_at")]
+        self.assertIn("User: i want some tuna", contents)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["--db", self.db, "scrub", "--apply"]), 0)
+        contents = [m["content"] for m in still.export() if not m.get("deleted_at")]
+        self.assertNotIn("User: i want some tuna", contents)
+        self.assertIn("I prefer dark roast coffee.", contents)
 
     def test_subagent_is_read_only(self):
         p = self.provider(agent_context="subagent")

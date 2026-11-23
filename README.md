@@ -308,6 +308,27 @@ Config goes under `plugins.teresis` in `config.yaml`:
 | `episode_ttl_days` | `30` | `0` keeps them forever |
 | `auto_extract` | `true` | Rule-based; precision over recall |
 | `prefetch_k` / `prefetch_budget_tokens` | `6` / `700` | Injection size |
+| `prefetch_min_score` | `0.45` | Score floor for automatic prefetch only. Tool `memory_recall` is not filtered. |
+
+Lexical prefetch ranks by shared words, then normalizes the best hit to about 1.0. A sushi order can pull in a gym note that only shares "want", or a music note that only shares "like". Prefetch now also requires a distinctive shared term (not a weak verb) and drops anything under `prefetch_min_score`. Explicit tool recall stays permissive so a search can still see the weak hits.
+
+Embeddings are what make that ranking semantic. Hermes does not forward `TERESIS_EMBED*` / `TERESIS_RERANK*` into the provider, so set them under `plugins.teresis` and backfill:
+
+```yaml
+plugins:
+  teresis:
+    embed: ollama          # or openai
+    embed_model: nomic-embed-text
+    embed_url: ""          # empty = http://localhost:11434 for ollama
+    rerank: fastembed      # optional; needs pip install 'teresis[rerank]'
+    rerank_model: Xenova/ms-marco-MiniLM-L-6-v2
+```
+
+```bash
+teresis embed --db "${TERESIS_DB:-$HOME/.local/share/teresis/memory.db}"
+```
+
+Core stays zero-dependency. If the embedder is down, writes still succeed and prefetch keeps the lexical floor. See [Embeddings](#embeddings-optional) and [Optional local reranker](#optional-local-reranker).
 
 Migrate existing built-in Hermes `MEMORY.md` and `USER.md` files (non-destructive, idempotent, secret-scrubbed):
 
@@ -382,6 +403,15 @@ Re-scores the top first-stage candidates with a local ONNX cross-encoder (no clo
 `teresis maintain` hard-deletes expired memories and memories soft-deleted more than 30 days ago, then
 optimizes the FTS indexes. `teresis export > backup.jsonl` and `teresis import < backup.jsonl` round-trip
 the full history.
+
+`teresis scrub` finds auto-extracted rows that are one-off wants or system/compaction text
+(`hermes:auto-extract` and `hermes:pre-compress` only). It is dry-run unless you pass `--apply`,
+and nothing calls it automatically.
+
+```bash
+teresis scrub --db "${TERESIS_DB:-$HOME/.local/share/teresis/memory.db}"
+teresis scrub --db "${TERESIS_DB:-$HOME/.local/share/teresis/memory.db}" --apply
+```
 
 ## Tests
 
