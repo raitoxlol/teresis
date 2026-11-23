@@ -525,6 +525,158 @@ class EngramSearch:
         pass
 
 
+
+
+class BasicMemoryAdapter:
+    def __init__(self, tmp: Path):
+        os.environ["LOGFIRE_IGNORE_NO_CONFIG"] = "1"
+        import asyncio
+        from loguru import logger
+        logger.disable("basic_memory")
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+        from basic_memory.models import Base
+        from basic_memory.repository.sqlite_search_repository import SQLiteSearchRepository
+        from basic_memory.repository.search_index_row import SearchIndexRow
+        from basic_memory.repository.embedding_provider import EmbeddingProvider
+        from basic_memory.schemas.search import SearchItemType, SearchRetrievalMode
+
+        self._asyncio = asyncio
+        self._SearchIndexRow = SearchIndexRow
+        self._SearchItemType = SearchItemType
+        self._SearchRetrievalMode = SearchRetrievalMode
+        self.model = os.environ.get("TERESIS_EMBED_MODEL", "all-minilm")
+        self.name = f"Basic Memory 1.0 (FTS5 + sqlite-vec + {self.model}, no reranker)"
+        emb = _ollama_embedder()
+
+        class _OllamaBMEmb(EmbeddingProvider):
+            @property
+            def model_name(_self) -> str:
+                return f"ollama:{self.model}"
+            @property
+            def dimensions(_self) -> int:
+                return int(os.environ.get("BENCH_EMBED_DIMS", "384"))
+            async def embed_documents(_self, texts):
+                return _embed_batched(emb, list(texts), batch=16)
+            async def embed_query(_self, text):
+                return emb.embed([text])[0]
+            async def embed(_self, texts):
+                return _embed_batched(emb, list(texts), batch=16)
+
+        self.loop = asyncio.new_event_loop()
+        self.eng = create_async_engine(f"sqlite+aiosqlite:///{tmp / 'bm.db'}")
+
+        async def _setup():
+            async with self.eng.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            sm = async_sessionmaker(self.eng, class_=AsyncSession, expire_on_commit=False)
+            repo = SQLiteSearchRepository(sm, project_id=1, embedding_provider=_OllamaBMEmb())
+            await repo.init_search_index()
+            return repo
+
+        self.repo = self.loop.run_until_complete(_setup())
+        self.sid_by_perm: dict[str, str] = {}
+
+    def add_all(self, units):
+        if not units:
+            return
+        from datetime import timezone
+        rows = []
+        eids = []
+        for idx, (sid, text, t) in enumerate(units, 1):
+            perm = f"u-{idx}"
+            self.sid_by_perm[perm] = sid
+            dt_obj = datetime.fromtimestamp(t, tz=timezone.utc) if t else datetime.now(timezone.utc)
+            rows.append(self._SearchIndexRow(
+                id=idx,
+                title=f"turn {idx}",
+                content_stems=text.lower(),
+                content_snippet=text,
+                permalink=perm,
+                file_path=f"{perm}.md",
+                type=self._SearchItemType.ENTITY.value,
+                entity_id=idx,
+                created_at=dt_obj,
+                updated_at=dt_obj,
+                project_id=1,
+            ))
+            eids.append(idx)
+
+        async def _ingest():
+            await self.repo.bulk_index_items(rows)
+            await self.repo.sync_entity_vectors_batch(eids)
+
+        self.loop.run_until_complete(_ingest())
+
+    def search(self, query, now):
+        async def _q():
+            try:
+                res = await self.repo.search(
+                    search_text=query,
+                    retrieval_mode=self._SearchRetrievalMode.HYBRID,
+                    limit=TOPN,
+                )
+            except Exception:
+                res = await self.repo.search(
+                    search_text=query,
+                    retrieval_mode=self._SearchRetrievalMode.VECTOR,
+                    limit=TOPN,
+                )
+            return [self.sid_by_perm[r.permalink] for r in res if r.permalink in self.sid_by_perm]
+
+        return self.loop.run_until_complete(_q())
+
+    def close(self):
+        try:
+            self.loop.run_until_complete(self.eng.dispose())
+        finally:
+            self.loop.close()
+
+
+
+
+class HonchoSearch:
+    name = "Honcho v3 (search API, all-minilm)"
+
+    def __init__(self, tmp: Path):
+        from honcho import Honcho
+        self.base_url = os.environ.get("HONCHO_BASE_URL", "http://127.0.0.1:8001")
+        self.ws = f"ret-{random.getrandbits(48):x}"
+        self.h = Honcho(workspace_id=self.ws, base_url=self.base_url)
+        self.u = self.h.peer("user")
+        self.s = self.h.session("s0")
+
+    def add_all(self, units):
+        if not units:
+            return
+        for i in range(0, len(units), 50):
+            batch = units[i:i + 50]
+            msgs = [self.u.message(text, metadata={"sid": sid}) for sid, text, _ in batch]
+            self.s.add_messages(msgs)
+        # Wait briefly for Honcho's background vector sync to embed the added messages
+        deadline = time.perf_counter() + 45.0
+        probe = units[-1][1][:80]
+        while time.perf_counter() < deadline:
+            try:
+                hits = self.u.search(probe, limit=5)
+                if hits and any((m.metadata or {}).get("sid") == units[-1][0] for m in hits):
+                    break
+            except Exception:
+                pass
+            time.sleep(1.5)
+
+    def search(self, query, now):
+        for attempt in range(3):
+            try:
+                hits = self.u.search(query, limit=TOPN)
+                return [(m.metadata or {}).get("sid", "") for m in hits if (m.metadata or {}).get("sid")]
+            except Exception:
+                time.sleep(1.5 * (attempt + 1))
+        return []
+
+    def close(self):
+        pass
+
+
 def make(system: str, tmp: Path, hermes: Path):
     if system == "naive":
         return Naive(tmp)
@@ -556,6 +708,10 @@ def make(system: str, tmp: Path, hermes: Path):
         return BM25SAdapter(tmp)
     if system == "engram":
         return EngramSearch(tmp)
+    if system == "basicmemory":
+        return BasicMemoryAdapter(tmp)
+    if system == "honcho":
+        return HonchoSearch(tmp)
     raise SystemExit(f"unknown system {system}")
 
 
