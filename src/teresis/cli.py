@@ -26,13 +26,18 @@ def _print_mems(mems, as_json: bool) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--db", default=argparse.SUPPRESS,
+                        help="database path (default $TERESIS_DB or ~/.local/share/teresis/memory.db)")
+    common.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="machine-readable output")
+
     p = argparse.ArgumentParser(prog="teresis", description="Local long-term memory for agents.")
-    p.add_argument("--db", help="database path (default $TERESIS_DB or ~/.local/share/teresis/memory.db)")
-    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.add_argument("--db", default=None, help="database path (default $TERESIS_DB or ~/.local/share/teresis/memory.db)")
+    p.add_argument("--json", action="store_true", default=False, help="machine-readable output")
     p.add_argument("--version", action="version", version=f"teresis {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    r = sub.add_parser("remember", help="store a memory")
+    r = sub.add_parser("remember", help="store a memory", parents=[common])
     r.add_argument("content")
     r.add_argument("-s", "--scope", default="global")
     r.add_argument("-k", "--kind", default="fact")
@@ -43,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--ttl-days", type=float)
     r.add_argument("--source")
 
-    q = sub.add_parser("recall", help="search memories")
+    q = sub.add_parser("recall", help="search memories", parents=[common])
     q.add_argument("query", nargs="?", default="")
     q.add_argument("-s", "--scope")
     q.add_argument("--no-inherit", action="store_true")
@@ -54,40 +59,40 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--as-of", type=float, help="unix time for time-travel queries")
     q.add_argument("--explain", action="store_true")
 
-    c = sub.add_parser("context", help="prompt-ready memory block")
+    c = sub.add_parser("context", help="prompt-ready memory block", parents=[common])
     c.add_argument("-s", "--scope", default="global")
     c.add_argument("-q", "--query", default="")
     c.add_argument("--budget", type=int, default=1200)
 
-    u = sub.add_parser("update", help="revise a memory (new version)")
+    u = sub.add_parser("update", help="revise a memory (new version)", parents=[common])
     u.add_argument("id")
     u.add_argument("content", nargs="?")
     u.add_argument("-i", "--importance", type=float)
     u.add_argument("--pin", action=argparse.BooleanOptionalAction, default=None)
 
-    f = sub.add_parser("forget", help="delete a memory")
+    f = sub.add_parser("forget", help="delete a memory", parents=[common])
     f.add_argument("id", nargs="?")
     f.add_argument("-s", "--scope")
     f.add_argument("--key")
     f.add_argument("--hard", action="store_true")
 
-    h = sub.add_parser("history", help="versions of a fact")
+    h = sub.add_parser("history", help="versions of a fact", parents=[common])
     h.add_argument("id", nargs="?")
     h.add_argument("-s", "--scope")
     h.add_argument("--key")
 
-    sub.add_parser("stats", help="store statistics")
-    m = sub.add_parser("maintain", help="purge expired/deleted, optimize indexes")
+    sub.add_parser("stats", help="store statistics", parents=[common])
+    m = sub.add_parser("maintain", help="purge expired/deleted, optimize indexes", parents=[common])
     m.add_argument("--vacuum", action="store_true")
-    sub.add_parser("embed", help="backfill vectors with the configured embedder")
-    sub.add_parser("export", help="dump all memories as JSONL to stdout")
-    sub.add_parser("import", help="load JSONL from stdin")
+    sub.add_parser("embed", help="backfill vectors with the configured embedder", parents=[common])
+    sub.add_parser("export", help="dump all memories as JSONL to stdout", parents=[common])
+    sub.add_parser("import", help="load JSONL from stdin", parents=[common])
 
-    s = sub.add_parser("serve", help="run the MCP server on stdio")
+    s = sub.add_parser("serve", help="run the MCP server on stdio", parents=[common])
     s.add_argument("-s", "--scope", action="append",
                    help="default scope (repeatable: writes use the first, recall searches all)")
 
-    w = sub.add_parser("http", help="run the local HTTP API")
+    w = sub.add_parser("http", help="run the local HTTP API", parents=[common])
     w.add_argument("--host", default="127.0.0.1")
     w.add_argument("--port", type=int, default=7077)
     w.add_argument("-s", "--scope", action="append")
@@ -97,13 +102,13 @@ def build_parser() -> argparse.ArgumentParser:
     hi = hm_sub.add_parser("install", help="install the teresis memory provider plugin into a Hermes home")
     hi.add_argument("--home", default=None, help="Hermes home (default $HERMES_HOME or ~/.hermes)")
     hi.add_argument("--link", action="store_true", help="symlink this checkout instead of copying (dev)")
-    him = hm_sub.add_parser("import", help="import built-in Hermes MEMORY.md and USER.md into teresis")
+    him = hm_sub.add_parser("import", help="import built-in Hermes MEMORY.md and USER.md into teresis", parents=[common])
     him.add_argument("--home", default=None, help="Hermes home or profile dir (default $HERMES_HOME or ~/.hermes)")
     him.add_argument("--scope", default=None, help="target scope for MEMORY.md (default from config.yaml)")
     him.add_argument("--user-scope", default="user", help="target scope for USER.md (default: user)")
     him.add_argument("--dry-run", action="store_true", help="count entries without writing")
 
-    b = sub.add_parser("bench", help="run the retrieval benchmark")
+    b = sub.add_parser("bench", help="run the retrieval benchmark", parents=[common])
     b.add_argument("--scale", type=int, default=10000, help="distractor memories for the latency test")
     return p
 

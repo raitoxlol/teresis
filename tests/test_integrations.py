@@ -222,6 +222,7 @@ class HermesProviderTests(unittest.TestCase):
             os.environ.pop(v, None)
         self.addCleanup(lambda: [os.environ.pop(v, None) for v in ("TERESIS_EMBED", "TERESIS_EMBED_MODEL", "TERESIS_EMBED_URL")])
         p = TeresisMemoryProvider(config={"db_path": self.db, "embed": "ollama", "embed_model": "all-minilm"})
+        self.addCleanup(p.shutdown)
         p.initialize("s", hermes_home=self.d.name, platform="cli", agent_identity="max")
         self.assertIsNotNone(p._store.embedder)
 
@@ -399,6 +400,25 @@ class HttpTests(unittest.TestCase):
                 self.assertTrue(any("Neovim" in h.content for h in hits))
                 all_text = " ".join(m["content"] for m in s.export())
                 self.assertNotIn("sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456", all_text)
+
+    def test_cli_db_and_json_after_subcommand(self):
+        import io
+        from contextlib import redirect_stdout
+        from teresis.cli import main as cli_main
+
+        with tempfile.TemporaryDirectory() as d:
+            dbp = str(Path(d) / "cli.db")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = cli_main(["remember", "Atlas uses Postgres", "--db", dbp, "--json"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(json.loads(buf.getvalue())["status"], "created")
+
+            buf2 = io.StringIO()
+            with redirect_stdout(buf2):
+                rc = cli_main(["stats", "--db", dbp, "--json"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(json.loads(buf2.getvalue())["active"], 1)
 
 
 if __name__ == "__main__":

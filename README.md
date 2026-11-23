@@ -4,8 +4,7 @@
 SQLite file and has no dependencies. It ships a Hermes memory provider, an MCP server, a local HTTP
 API, a CLI and a Python API, and all of them share the same store.
 
-Development runs on nucbox (`/home/nuc/Projects/teresis`). Brand color: Manuscript Ochre (`#A67A2A`,
-dark-mode accent `#D9AF5B`, light-mode ink `#7C591B`).
+Website: https://www.raitox.tech/teresis · License: Apache 2.0 (`LICENSE`).
 
 ## Why it is built this way
 
@@ -23,6 +22,7 @@ the write path as much as the read path:
 | Stale and temporary facts | Recency, importance, reinforcement and pinning act as gentle tie-breakers. `ttl_days` makes memories expire. |
 | Context windows are finite | `budget_tokens` packs the best memories that fit. `context()` returns a ready-to-inject block. |
 | Many agents, one store | WAL mode, `BEGIN IMMEDIATE` writes, busy timeouts. The test suite runs 4 processes writing concurrently. |
+| Secrets leak into memory | Write-time pattern rules redact API keys, Bearer/JWT tokens, private keys, and inline passwords before storage or embedding. |
 
 ### Retrieval
 
@@ -252,7 +252,7 @@ from 0.33 to 0.83.
 
 Latency, lexical, 10k memories: recall p50 14 ms / p95 21 ms, about 200 writes/s, 6 MB on disk.
 With CPU embeddings and no numpy: recall p50 about 180 ms, about 20 writes/s, dominated by the
-embedding call and pure-Python cosine. Install `numpy` (`pip install teresis[fast]`) for vectorized
+embedding call and pure-Python cosine. Install `numpy` (`pip install numpy`) for vectorized
 similarity.
 
 Caveat: the fixture was written by the author and the lexical defaults were tuned on it. Treat the
@@ -267,7 +267,8 @@ PYTHONPATH=src python3 -m teresis recall "atlas db" -s project/atlas --explain
 PYTHONPATH=src python3 -m teresis context -s project/atlas -q "fix the migration" --budget 800
 PYTHONPATH=src python3 -m teresis history -s project/atlas --key atlas.database
 
-# or install: pip install -e .   then just `teresis ...`
+# install from GitHub:
+pip install git+https://github.com/raitoxlol/teresis.git
 ```
 
 The database defaults to `$TERESIS_DB`, else `~/.local/share/teresis/memory.db`.
@@ -302,10 +303,18 @@ Config goes under `plugins.teresis` in `config.yaml`:
 | `scope` | `hermes/<profile>` | Write scope |
 | `extra_scopes` | `user` | Also searched on recall (comma-separated) |
 | `embed` / `embed_model` / `embed_url` | `""` | Embedder for this provider, e.g. `ollama` / `all-minilm`. Hermes does not forward `TERESIS_EMBED*` env vars, so set them here. |
+| `rerank` / `rerank_model` | `""` | Optional local ONNX cross-encoder (`fastembed` / `Xenova/ms-marco-MiniLM-L-6-v2`). |
 | `capture_turns` | `true` | Save turns as episodes |
 | `episode_ttl_days` | `30` | `0` keeps them forever |
 | `auto_extract` | `true` | Rule-based; precision over recall |
 | `prefetch_k` / `prefetch_budget_tokens` | `6` / `700` | Injection size |
+
+Migrate existing built-in Hermes `MEMORY.md` and `USER.md` files (non-destructive, idempotent, secret-scrubbed):
+
+```bash
+teresis hermes import --home ~/.hermes            # or ~/.hermes/profiles/<name>
+teresis hermes import --home ~/.hermes --dry-run  # preview counts only
+```
 
 ### MCP (Claude Code, Codex, Cursor, OMP, …)
 
@@ -359,6 +368,15 @@ teresis embed                                                              # bac
 
 If the embedder is down, writes still succeed without a vector, and `teresis embed` backfills them later.
 
+### Optional local reranker
+
+```bash
+pip install "git+https://github.com/raitoxlol/teresis.git#egg=teresis[rerank]"
+export TERESIS_RERANK=fastembed TERESIS_RERANK_MODEL=Xenova/ms-marco-MiniLM-L-6-v2
+```
+
+Re-scores the top first-stage candidates with a local ONNX cross-encoder (no cloud API).
+
 ## Maintenance
 
 `teresis maintain` hard-deletes expired memories and memories soft-deleted more than 30 days ago, then
@@ -380,3 +398,7 @@ PYTHONPATH=src python3 -m teresis bench
   without it.
 - No LLM is in the loop: there is no automatic summarization or extraction. The agent decides what is
   worth remembering, which keeps writes deterministic and fast.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
