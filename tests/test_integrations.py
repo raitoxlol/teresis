@@ -189,6 +189,7 @@ class HermesProviderTests(unittest.TestCase):
     def provider(self, **init):
         p = TeresisMemoryProvider(config={"db_path": self.db})
         self.assertTrue(p.is_available())
+        self.addCleanup(p.shutdown)
         p.initialize("sess-1", hermes_home=self.d.name, platform="cli", agent_identity="max", **init)
         return p
 
