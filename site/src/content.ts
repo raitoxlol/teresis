@@ -103,15 +103,15 @@ m.recall("which editor?", scope=["project/atlas", "user"])`,
 
 export const FAQ = [
   {
-    q: 'Does anything leave my machine?',
+    q: 'Does Teresis send anything off my machine?',
     a: 'No. Teresis stores everything in one local SQLite file. Embeddings are optional; if you turn them on, they come from an Ollama or OpenAI-compatible server you choose.',
   },
   {
-    q: 'Do I need a GPU or a model?',
+    q: 'Does Teresis need a GPU or a model?',
     a: 'No. Without embeddings it runs on keyword and fuzzy search alone, in milliseconds on a laptop CPU. Embeddings add paraphrase matching.',
   },
   {
-    q: 'Which agents does it work with?',
+    q: 'Which agents does Teresis work with?',
     a: 'A native memory provider for Hermes Agent, an MCP server for Claude Code, Codex, Cursor and every other MCP client, plus HTTP and Python APIs. All share one store.',
   },
   {
@@ -119,7 +119,7 @@ export const FAQ = [
     a: 'Yes. Scopes keep projects apart, and SQLite WAL lets several processes write at once. Subagents and crons can run read-only.',
   },
   {
-    q: 'How is it licensed?',
-    a: 'Apache 2.0. Install with pip from GitHub, or read the source there.',
+    q: 'How is Teresis licensed?',
+    a: 'Apache 2.0. Install with Homebrew (brew install raitoxlol/tap/teresis), pip from GitHub, or download teresis.pyz from GitHub Releases.',
   },
 ];

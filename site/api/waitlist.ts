@@ -13,17 +13,28 @@ function json(body: Record<string, unknown>, status = 200): Response {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  let payload: unknown;
-  try {
-    payload = await request.json();
-  } catch {
-    return json({error: 'Invalid JSON body.'}, 400);
+  const type = request.headers.get('content-type') ?? '';
+  let raw = '';
+  if (type.includes('json')) {
+    let payload: unknown;
+    try {
+      payload = await request.json();
+    } catch {
+      return json({error: 'Invalid JSON body.'}, 400);
+    }
+    raw =
+      typeof payload === 'object' && payload !== null && 'email' in payload && typeof (payload as {email?: unknown}).email === 'string'
+        ? (payload as {email: string}).email
+        : '';
+  } else {
+    try {
+      const form = await request.formData();
+      const value = form.get('email');
+      raw = typeof value === 'string' ? value : '';
+    } catch {
+      return json({error: 'Invalid form body.'}, 400);
+    }
   }
-
-  const raw =
-    typeof payload === 'object' && payload !== null && 'email' in payload && typeof (payload as {email?: unknown}).email === 'string'
-      ? (payload as {email: string}).email
-      : '';
   const email = raw.trim().toLowerCase();
 
   if (!email || email.length > 320 || /[\r\n]/.test(email) || !EMAIL_RE.test(email)) {

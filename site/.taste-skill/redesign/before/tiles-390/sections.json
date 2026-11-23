@@ -1,0 +1,146 @@
+{
+ "url": "http://127.0.0.1:5300/index.html",
+ "views": {
+  "mobile": {
+   "width": 390,
+   "height": 844,
+   "navH": 0,
+   "scrollHeight": 9697,
+   "screens": 11.49,
+   "sections": [
+    {
+     "n": 1,
+     "tag": "section",
+     "id": "how",
+     "cls": "story",
+     "top": 1064,
+     "h": 3689,
+     "hScreens": 4.37,
+     "offGrid": 313,
+     "tiles": [
+      {
+       "file": "mobile-sec-01-a.jpg",
+       "scrollY": 1064
+      },
+      {
+       "file": "mobile-sec-01-b.jpg",
+       "scrollY": 1908
+      },
+      {
+       "file": "mobile-sec-01-c.jpg",
+       "scrollY": 2752
+      },
+      {
+       "file": "mobile-sec-01-d.jpg",
+       "scrollY": 3596
+      },
+      {
+       "file": "mobile-sec-01-e.jpg",
+       "scrollY": 3900,
+       "cutTop": 9,
+       "height": 835
+      }
+     ]
+    },
+    {
+     "n": 2,
+     "tag": "section",
+     "id": "proof",
+     "cls": "proof",
+     "top": 4753,
+     "h": 2997,
+     "hScreens": 3.55,
+     "offGrid": 465,
+     "tiles": [
+      {
+       "file": "mobile-sec-02-a.jpg",
+       "scrollY": 4753
+      },
+      {
+       "file": "mobile-sec-02-b.jpg",
+       "scrollY": 5597
+      },
+      {
+       "file": "mobile-sec-02-c.jpg",
+       "scrollY": 6441
+      },
+      {
+       "file": "mobile-sec-02-d.jpg",
+       "scrollY": 6906
+      }
+     ]
+    },
+    {
+     "n": 3,
+     "tag": "section",
+     "id": "install",
+     "cls": "installs",
+     "top": 7750,
+     "h": 669,
+     "hScreens": 0.79,
+     "offGrid": 669,
+     "tiles": [
+      {
+       "file": "mobile-sec-03-a.jpg",
+       "scrollY": 7750
+      }
+     ]
+    },
+    {
+     "n": 4,
+     "tag": "section",
+     "id": "",
+     "cls": "faq",
+     "top": 8419,
+     "h": 667,
+     "hScreens": 0.79,
+     "offGrid": 667,
+     "tiles": [
+      {
+       "file": "mobile-sec-04-a.jpg",
+       "scrollY": 8419
+      }
+     ]
+    },
+    {
+     "n": 5,
+     "tag": "section",
+     "id": "join",
+     "cls": "close",
+     "top": 9086,
+     "h": 511,
+     "hScreens": 0.61,
+     "offGrid": 511,
+     "tiles": [
+      {
+       "file": "mobile-sec-05-a.jpg",
+       "scrollY": 8853,
+       "cutTop": 233,
+       "height": 511
+      }
+     ]
+    },
+    {
+     "n": 6,
+     "tag": "footer",
+     "id": "",
+     "cls": "foot",
+     "top": 9596,
+     "h": 100,
+     "hScreens": 0.12,
+     "offGrid": 100,
+     "tiles": [
+      {
+       "file": "mobile-sec-06-a.jpg",
+       "scrollY": 8853,
+       "cutTop": 743,
+       "height": 100
+      }
+     ]
+    }
+   ],
+   "consoleErrors": []
+  }
+ },
+ "at": "2026-11-23T04:52:30.582Z"
+}

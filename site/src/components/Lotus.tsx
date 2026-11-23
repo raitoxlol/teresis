@@ -46,7 +46,7 @@ export function Lotus({step = 6, intro = false, grid = false, pad = 0.12, classN
 /** Small solid mark for the nav and footer. */
 export function Mark({className = ''}: {className?: string}) {
   return (
-    <svg className={`mark ${className}`} viewBox={`0 0 ${MARK.w} ${MARK.h}`} aria-hidden="true">
+    <svg className={`lotus-mark ${className}`} viewBox={`0 0 ${MARK.w} ${MARK.h}`} aria-hidden="true">
       <path d={PETALS.join('')} />
     </svg>
   );
