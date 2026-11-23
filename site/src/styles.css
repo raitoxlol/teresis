@@ -93,14 +93,62 @@ p { margin: 0; }
 .links a { text-decoration: none; }
 .links a:hover { color: var(--cream); text-decoration: underline; }
 .pill {
-  font-size: 15px; font-weight: 500; text-decoration: none; color: var(--deep); background: var(--ochre);
-  padding: 10px 18px; border-radius: 999px; transition: background-color 0.2s var(--ease);
+  font-size: 15px; font-weight: 500; text-decoration: none; color: var(--deep);
+  padding: 10px 18px; border-radius: 999px;
+  background-color: var(--ochre);
+  background-image:
+    linear-gradient(115deg, transparent 38%, rgba(232, 214, 255, 0.7) 50%, transparent 62%),
+    linear-gradient(70deg, transparent 40%, rgba(150, 100, 220, 0.45) 50%, transparent 60%),
+    linear-gradient(var(--ochre), var(--ochre));
+  background-size: 240% 100%, 200% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  animation: glint-btn 8s linear infinite;
 }
-.pill:hover { background: #e6c174; }
+.pill:hover {
+  background-color: #e6c174;
+  background-image:
+    linear-gradient(115deg, transparent 38%, rgba(232, 214, 255, 0.7) 50%, transparent 62%),
+    linear-gradient(70deg, transparent 40%, rgba(150, 100, 220, 0.45) 50%, transparent 60%),
+    linear-gradient(#e6c174, #e6c174);
+}
 
 .hero-copy { position: relative; z-index: 2; align-self: center; padding: 24px 0 24px var(--gutter); }
 h1 { font-size: clamp(54px, 6.9vw, 96px); line-height: 0.95; letter-spacing: -0.02em; }
-h1 .keeps { color: var(--ochre); }
+/* Enchantment glint: sparse diagonal threads, clipped to the ochre glyphs, drifting slowly. */
+h1 .keeps {
+  display: inline-block;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-image:
+    repeating-linear-gradient(
+      115deg,
+      transparent 0 78px,
+      rgba(214, 190, 255, 0.2) 86px,
+      rgba(244, 236, 255, 0.82) 94px,
+      rgba(168, 120, 240, 0.62) 102px,
+      transparent 112px,
+      transparent 210px
+    ),
+    linear-gradient(var(--ochre), var(--ochre));
+  background-size: 210px 210px, 100% 100%;
+  background-repeat: repeat, no-repeat;
+  background-position: 0 0, 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: glint-text 9s linear infinite;
+}
+@keyframes glint-text {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 210px 210px, 0 0; }
+}
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  h1 .keeps {
+    color: var(--ochre);
+    -webkit-text-fill-color: var(--ochre);
+    background: none;
+    animation: none;
+  }
+}
 .sub { margin-top: 28px; color: var(--sage); font-size: clamp(17px, 1.35vw, 20px); max-width: 34ch; }
 
 .hero-lotus {
@@ -145,9 +193,28 @@ h1 .keeps { color: var(--ochre); }
 .wait input:user-invalid { border-color: #e8907a; }
 .wait button {
   font: inherit; font-size: 16px; font-weight: 500; height: 48px; padding: 0 22px; border: 0; border-radius: 999px;
-  background: var(--ochre); color: var(--deep); cursor: pointer; transition: background-color 0.2s var(--ease), opacity 0.2s;
+  color: var(--deep); cursor: pointer; transition: opacity 0.2s;
+  background-color: var(--ochre);
+  background-image:
+    linear-gradient(115deg, transparent 38%, rgba(232, 214, 255, 0.7) 50%, transparent 62%),
+    linear-gradient(70deg, transparent 40%, rgba(150, 100, 220, 0.45) 50%, transparent 60%),
+    linear-gradient(var(--ochre), var(--ochre));
+  background-size: 240% 100%, 200% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  animation: glint-btn 8s linear infinite;
+  animation-delay: 1.2s;
 }
-.wait button:hover { background: #e6c174; }
+.wait button:hover {
+  background-color: #e6c174;
+  background-image:
+    linear-gradient(115deg, transparent 38%, rgba(232, 214, 255, 0.7) 50%, transparent 62%),
+    linear-gradient(70deg, transparent 40%, rgba(150, 100, 220, 0.45) 50%, transparent 60%),
+    linear-gradient(#e6c174, #e6c174);
+}
+@keyframes glint-btn {
+  from { background-position: 130% 0, -30% 0, 0 0; }
+  to { background-position: -30% 0, 130% 0, 0 0; }
+}
 .wait button:disabled { opacity: 0.6; cursor: progress; }
 .wait-msg { grid-column: 1 / -1; font-size: 14px; color: #f0b8a6; padding-left: 18px; }
 .wait-done { font-size: 17px; color: var(--ochre); }
@@ -329,4 +396,26 @@ main { background-image: var(--grid-tile); background-size: var(--grid-size); }
   .lotus .petal, .story-steps > li, .bar { transition: none; }
   .lotus.is-intro .petal, .gridlayer.drawing { animation: none; }
   .story-plate .lotus-grid { clip-path: none; transition: none; }
+  h1 .keeps {
+    animation: none;
+    -webkit-text-fill-color: transparent;
+    background-image:
+      linear-gradient(rgba(190, 160, 255, 0.22), rgba(190, 160, 255, 0.22)),
+      linear-gradient(var(--ochre), var(--ochre));
+    background-size: 100% 100%, 100% 100%;
+    background-position: 0 0, 0 0;
+  }
+  .pill, .wait button {
+    animation: none;
+    background-image:
+      linear-gradient(115deg, transparent 28%, rgba(190, 160, 255, 0.28) 50%, transparent 72%),
+      linear-gradient(var(--ochre), var(--ochre));
+    background-size: 100% 100%, 100% 100%;
+    background-position: 0 0, 0 0;
+  }
+  .pill:hover, .wait button:hover {
+    background-image:
+      linear-gradient(115deg, transparent 28%, rgba(190, 160, 255, 0.28) 50%, transparent 72%),
+      linear-gradient(#e6c174, #e6c174);
+  }
 }
