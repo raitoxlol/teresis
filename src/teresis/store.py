@@ -11,18 +11,19 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
 
 from . import embed as _embed
+from . import entities as _entities
 from . import secrets as _secrets
 from . import temporal as _temporal
 from . import text as T
 
 log = logging.getLogger("teresis")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DAY = 86400.0
 
 SCHEMA = """
@@ -79,6 +80,23 @@ CREATE TABLE IF NOT EXISTS vectors (
     model     TEXT NOT NULL,
     vec       BLOB NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS entities (
+    key        TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    kind       TEXT NOT NULL DEFAULT 'concept',
+    explicit   INTEGER NOT NULL DEFAULT 0,
+    mentions   INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_entities (
+    memory_id  TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    entity_key TEXT NOT NULL REFERENCES entities(key) ON DELETE CASCADE,
+    weight     REAL NOT NULL DEFAULT 1.0,
+    PRIMARY KEY (memory_id, entity_key)
+);
+CREATE INDEX IF NOT EXISTS ix_me_entity ON memory_entities(entity_key);
 """
 
 
@@ -169,6 +187,8 @@ class Weights:
     rerank: float = 0.65  # blend weight for optional cross-encoder reranker (0..1)
     rerank_pool: int = 25  # top first-stage candidates passed to optional reranker
     mmr: float = 0.0  # diversity penalty (0 = off): demotes near-copies of already-picked results
+    entity_hop: float = 0.45  # scale for one entity-hop neighbours (0 = off)
+    entity_min_mentions: int = 2  # inferred entity must appear in this many memories to be traversed
     dup_jaccard: float = 0.9
     refine_containment: float = 0.9
 
@@ -189,6 +209,11 @@ class MemoryStore:
         self.embedder = _embed.from_env() if embedder == "env" else embedder
         self.reranker = _embed.reranker_from_env() if reranker == "env" else reranker
         self.w = weights or Weights()
+        if (override := os.environ.get("TERESIS_WEIGHTS")) and weights is None:
+            try:  # e.g. TERESIS_WEIGHTS={entity_hop: 0.25} for A/B benchmarking
+                self.w = replace(self.w, **json.loads(override))
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                log.warning("ignoring bad TERESIS_WEIGHTS: %s", exc)
         self.clock = clock
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(str(self.path), isolation_level=None, check_same_thread=False, timeout=30)
@@ -313,6 +338,7 @@ class MemoryStore:
                     " pinned=max(pinned, ?) WHERE id=?",
                     [now, importance, int(pinned), dup["id"]],
                 )
+                self._link_entities(c, dup["id"], content, now)
                 return RememberResult(dup["id"], "duplicate", redacted=redacted)
 
             new_id = uuid.uuid4().hex[:16]
@@ -346,6 +372,7 @@ class MemoryStore:
                 c.execute(
                     "INSERT INTO vectors(memory_id, model, vec) VALUES (?,?,?)", [new_id, self.embedder.name, vec]
                 )
+            self._link_entities(c, new_id, content, now)
         status = "created" if not replaced else ("refined" if refined else "superseded")
         return RememberResult(new_id, status, replaced, redacted)
 
@@ -547,6 +574,9 @@ class MemoryStore:
 
         if self.reranker and w.rerank > 0 and len(scored) > 1:
             scored = self._rerank(query, scored, explain)
+
+        if w.entity_hop > 0 and scored:
+            scored = self._expand_entities(scored, base_where, base_params, k, now, explain)
 
         if w.mmr > 0:
             scored = self._mmr(scored, w.mmr)
@@ -809,6 +839,144 @@ class MemoryStore:
         return out[:limit]
 
     # ------------------------------------------------------------------ admin
+    # --------------------------------------------------------------- entities
+    def _link_entities(self, c: sqlite3.Connection, memory_id: str, content: str, now: float) -> None:
+        """Record candidate entities for a memory (caller owns the transaction)."""
+        for e in _entities.extract(content):
+            c.execute(
+                "INSERT INTO entities(key, name, kind, explicit, mentions, created_at, updated_at)"
+                " VALUES (?,?,?,?,1,?,?)"
+                " ON CONFLICT(key) DO UPDATE SET mentions=entities.mentions+1,"
+                " explicit=max(entities.explicit, excluded.explicit), updated_at=excluded.updated_at",
+                [e.key, e.name, e.kind, int(e.explicit), now, now],
+            )
+            c.execute(
+                "INSERT INTO memory_entities(memory_id, entity_key, weight) VALUES (?,?,?)"
+                " ON CONFLICT(memory_id, entity_key) DO UPDATE SET"
+                " weight=max(memory_entities.weight, excluded.weight)",
+                [memory_id, e.key, e.weight],
+            )
+
+    def entities_for(self, memory_id: str) -> list[dict[str, Any]]:
+        """Entities attached to one memory, strongest first."""
+        rows = self._q(
+            "SELECT e.key, e.name, e.kind, e.explicit, e.mentions, me.weight FROM memory_entities me"
+            " JOIN entities e ON e.key=me.entity_key WHERE me.memory_id=? ORDER BY me.weight DESC, e.key",
+            [memory_id],
+        )
+        return [dict(r) for r in rows]
+
+    def link(self, memory_id: str, name: str, *, kind: str = "concept", weight: float = 1.0) -> str:
+        """Attach an explicit entity (always traversable) to a memory. Returns its key."""
+        key = _entities.normalize(name)
+        if not key:
+            raise ValueError("entity name must be non-empty")
+        if kind not in _entities.KINDS:
+            raise ValueError(f"unknown entity kind {kind!r}")
+        if self.get(memory_id) is None:
+            raise KeyError(f"no memory {memory_id!r}")
+        now = self.clock()
+        with self._write() as c:
+            c.execute(
+                "INSERT INTO entities(key, name, kind, explicit, mentions, created_at, updated_at)"
+                " VALUES (?,?,?,1,1,?,?)"
+                " ON CONFLICT(key) DO UPDATE SET explicit=1, updated_at=excluded.updated_at",
+                [key, " ".join(name.strip().split()), kind, now, now],
+            )
+            c.execute(
+                "INSERT INTO memory_entities(memory_id, entity_key, weight) VALUES (?,?,?)"
+                " ON CONFLICT(memory_id, entity_key) DO UPDATE SET"
+                " weight=max(memory_entities.weight, excluded.weight)",
+                [memory_id, key, float(weight)],
+            )
+        return key
+
+    def unlink(self, memory_id: str, name: str) -> int:
+        """Detach one entity from a memory. Returns rows removed."""
+        with self._write() as c:
+            return c.execute(
+                "DELETE FROM memory_entities WHERE memory_id=? AND entity_key=?",
+                [memory_id, _entities.normalize(name)],
+            ).rowcount
+
+    def entity_memories(self, name: str, *, limit: int = 20) -> list[Memory]:
+        """Active memories attached to one entity, newest first."""
+        key = _entities.normalize(name)
+        active, params = self._active_sql("m")
+        rows = self._q(
+            f"SELECT m.* FROM memory_entities me JOIN memories m ON m.id=me.memory_id"
+            f" WHERE me.entity_key=? AND {active} ORDER BY m.updated_at DESC LIMIT ?",
+            [key, *params, limit],
+        )
+        return [Memory.from_row(r) for r in rows]
+
+    def top_entities(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """Entities by number of attached memories (UI + `teresis entities`)."""
+        rows = self._q(
+            "SELECT e.key, e.name, e.kind, e.explicit, e.mentions, count(me.memory_id) AS memories"
+            " FROM entities e LEFT JOIN memory_entities me ON me.entity_key=e.key"
+            " GROUP BY e.key ORDER BY memories DESC, e.mentions DESC, e.key LIMIT ?",
+            [limit],
+        )
+        return [dict(r) for r in rows]
+
+    def reindex_entities(self) -> dict[str, int]:
+        """Rebuild the entity graph from stored content (deterministic, safe to re-run)."""
+        now = self.clock()
+        with self._write() as c:
+            c.execute("DELETE FROM memory_entities")
+            c.execute("DELETE FROM entities")
+            rows = c.execute("SELECT id, content, updated_at FROM memories WHERE deleted_at IS NULL").fetchall()
+            for r in rows:
+                self._link_entities(c, r["id"], r["content"], r["updated_at"] or now)
+        return {"memories": len(rows), "entities": self._q("SELECT count(*) FROM entities")[0][0]}
+
+    def _expand_entities(self, scored: list[Memory], base_where: str, base_params: list[Any], k: int,
+                         now: float, explain: bool) -> list[Memory]:
+        """One-hop expansion: pull in facts that share a traversable entity with a top hit."""
+        w = self.w
+        head = scored[: max(k * 2, 12)]
+        anchors: dict[str, float] = {}
+        for m in head:
+            for e in self.entities_for(m.id):
+                if e["explicit"] or e["mentions"] >= w.entity_min_mentions:
+                    anchors[e["key"]] = max(anchors.get(e["key"], 0.0), m.score or 0.0)
+        if not anchors:
+            return scored
+        keys = list(anchors)
+        ph = ",".join("?" * len(keys))
+        rows = self._q(
+            f"SELECT me.memory_id, me.entity_key, me.weight FROM memory_entities me"
+            f" JOIN memories m ON m.id=me.memory_id"
+            f" WHERE me.entity_key IN ({ph}) AND {base_where}",
+            [*keys, *base_params],
+        )
+        top = scored[0].score or 1.0
+        by_id = {m.id: m for m in scored}
+        best: dict[str, tuple[float, str]] = {}
+        for r in rows:
+            cand = anchors.get(r["entity_key"], 0.0) * w.entity_hop * min(1.0, float(r["weight"]))
+            prev = best.get(r["memory_id"])
+            if prev is None or cand > prev[0]:
+                best[r["memory_id"]] = (cand, r["entity_key"])
+        added = 0
+        for mid, (cand, ekey) in best.items():
+            if mid in by_id or cand < top * 0.05:
+                continue
+            row = self._q("SELECT * FROM memories WHERE id=?", [mid])
+            if not row:
+                continue
+            mem = Memory.from_row(row[0])
+            mem.score = round(cand, 6)
+            if explain:
+                mem.why = {"entity_hop": ekey}
+            by_id[mid] = mem
+            scored.append(mem)
+            added += 1
+        if added:
+            scored.sort(key=lambda m: m.score or 0, reverse=True)
+        return scored
+
     def stats(self) -> dict[str, Any]:
         now = self.clock()
         row = self._q(
@@ -826,6 +994,8 @@ class MemoryStore:
             "path": str(self.path),
             **{k: int(row[k] or 0) for k in ("total", "active", "superseded", "deleted")},
             "vectors": vecs,
+            "entities": self._q("SELECT count(*) FROM entities")[0][0],
+            "links": self._q("SELECT count(*) FROM memory_entities")[0][0],
             "embedder": self.embedder.name if self.embedder else None,
             "scopes": {r["scope"]: r["n"] for r in scopes},
         }
@@ -890,5 +1060,8 @@ class MemoryStore:
                         d.get("superseded_by"), d.get("superseded_at"), d.get("deleted_at"),
                     ],
                 )
-                n += c.execute("SELECT changes()").fetchone()[0]
+                inserted = c.execute("SELECT changes()").fetchone()[0]
+                n += inserted
+                if inserted:
+                    self._link_entities(c, d["id"], d["content"], d.get("updated_at") or self.clock())
         return n

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 
 from . import __version__
 from .store import MemoryStore
@@ -113,6 +114,58 @@ def build_parser() -> argparse.ArgumentParser:
     sc = sub.add_parser("scrub", help="find bad auto-extracted rows (dry-run unless --apply)", parents=[common])
     sc.add_argument("--apply", action="store_true",
                     help="soft-delete flagged rows. Default is a dry-run and never runs on its own.")
+
+    ui = sub.add_parser("ui", help="open a local memory inspector in the browser", parents=[common])
+    ui.add_argument("--host", default="127.0.0.1")
+    ui.add_argument("--port", type=int, default=7878)
+    ui.add_argument("--no-browser", action="store_true")
+
+    st = sub.add_parser("setup", help="wire Claude Code, Cursor, Codex and Hermes to this store")
+    st.add_argument("--home", default=None, help="home directory to configure (default ~)")
+    st.add_argument("--only", default=None, help="comma-separated client ids")
+    st.add_argument("--dry-run", action="store_true")
+    st.add_argument("--json", action="store_true", default=False)
+
+    dr = sub.add_parser("doctor", help="check the install end to end", parents=[common])
+    dr.add_argument("--home", default=None)
+    dr.add_argument("--embed", action="store_true", help="also ping the configured embedder")
+
+    sy = sub.add_parser("sync", help="encrypted multi-machine sync")
+    sy_sub = sy.add_subparsers(dest="sync_cmd", required=True)
+    se = sy_sub.add_parser("export", parents=[common], help="write an encrypted bundle")
+    se.add_argument("--out", required=True)
+    se.add_argument("--scope", action="append")
+    se.add_argument("--key-env", default="TERESIS_SYNC_KEY")
+    si = sy_sub.add_parser("import", parents=[common], help="decrypt a bundle and merge it")
+    si.add_argument("--in", dest="inp", required=True)
+    si.add_argument("--key-env", default="TERESIS_SYNC_KEY")
+    si.add_argument("--dry-run", action="store_true")
+    sm = sy_sub.add_parser("merge", parents=[common], help="merge another plain teresis .db")
+    sm.add_argument("--from", dest="src", required=True)
+    sm.add_argument("--dry-run", action="store_true")
+    sp = sy_sub.add_parser("push", parents=[common], help="export and copy to host:/path over ssh")
+    sp.add_argument("--out", default=None)
+    sp.add_argument("--to", required=True)
+    sp.add_argument("--key-env", default="TERESIS_SYNC_KEY")
+    spl = sy_sub.add_parser("pull", parents=[common], help="fetch host:/path over ssh and merge")
+    spl.add_argument("--from", dest="src", required=True)
+    spl.add_argument("--in", dest="inp", default=None)
+    spl.add_argument("--key-env", default="TERESIS_SYNC_KEY")
+    spl.add_argument("--dry-run", action="store_true")
+
+    lk = sub.add_parser("link", help="attach an entity to a memory", parents=[common])
+    lk.add_argument("id")
+    lk.add_argument("entity")
+    lk.add_argument("--kind", default="concept", choices=["person", "project", "host", "tool", "concept"])
+    lk.add_argument("--weight", type=float, default=1.0)
+    ul = sub.add_parser("unlink", help="detach an entity from a memory", parents=[common])
+    ul.add_argument("id")
+    ul.add_argument("entity")
+    en = sub.add_parser("entities", help="list entities, or rebuild the graph", parents=[common])
+    en.add_argument("--limit", type=int, default=50)
+    en.add_argument("--rebuild", action="store_true")
+    li = sub.add_parser("links", help="entities attached to a memory", parents=[common])
+    li.add_argument("id")
     return p
 
 
@@ -143,6 +196,33 @@ def main(argv: list[str] | None = None) -> int:
                   f"{res['memory_entries']} MEMORY.md ({res['scope']}), "
                   f"{res['user_entries']} USER.md ({res['user_scope']}) — {mode}")
         return 0
+
+    if args.cmd == "setup":
+        from pathlib import Path
+
+        from .doctor import setup
+
+        rows = setup(None if not args.home else Path(args.home),
+                     only=(args.only.split(",") if args.only else None), dry_run=args.dry_run)
+        if args.json:
+            print(json.dumps(rows, indent=2))
+        else:
+            for r in rows:
+                print(f"{r['status']:12} {r['name']:14} {r['detail']}")
+        return 0
+    if args.cmd == "doctor":
+        from pathlib import Path
+
+        from .doctor import run_doctor
+
+        res = run_doctor(args.db, home=None if not args.home else Path(args.home), embed=args.embed)
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            for c in res["checks"]:
+                print(f"{'ok  ' if c['ok'] else 'FAIL'} {c['name']:16} {c['detail']}")
+            print(f"\n{'healthy' if res['ok'] else 'problems found'} · db {res['db']}")
+        return 0 if res["ok"] else 1
 
     store = MemoryStore(args.db)
     try:
@@ -210,6 +290,55 @@ def main(argv: list[str] | None = None) -> int:
                 sys.stdout.write(json.dumps(rec) + "\n")
         elif args.cmd == "import":
             print(f"imported {store.import_(json.loads(line) for line in sys.stdin if line.strip())}")
+        elif args.cmd == "ui":
+            from .ui import serve
+
+            serve(store, host=args.host, port=args.port, open_browser=not args.no_browser)
+        elif args.cmd == "sync":
+            from pathlib import Path
+
+            from . import sync as _sync
+
+            if args.sync_cmd == "export":
+                pw = _sync.passphrase(args.key_env, confirm=True)
+                print(json.dumps(_sync.export_bundle(store, Path(args.out), pw, args.scope)))
+            elif args.sync_cmd == "import":
+                pw = _sync.passphrase(args.key_env)
+                recs = _sync.read_bundle(Path(args.inp), pw)
+                print(json.dumps(_sync.merge(store, recs, dry_run=args.dry_run)))
+            elif args.sync_cmd == "merge":
+                other = MemoryStore(args.src, embedder=None)
+                try:
+                    recs = list(other.export())
+                finally:
+                    other.close()
+                print(json.dumps(_sync.merge(store, recs, dry_run=args.dry_run)))
+            elif args.sync_cmd == "push":
+                pw = _sync.passphrase(args.key_env, confirm=True)
+                out = Path(args.out) if args.out else Path(tempfile.mkdtemp()) / "teresis-sync.json"
+                info = _sync.export_bundle(store, out, pw)
+                print(json.dumps(info))
+                _sync.push(out, args.to)
+            else:  # pull
+                pw = _sync.passphrase(args.key_env)
+                inp = Path(args.inp) if args.inp else Path(tempfile.mkdtemp()) / "teresis-sync.json"
+                _sync.pull(args.src, inp)
+                recs = _sync.read_bundle(inp, pw)
+                print(json.dumps(_sync.merge(store, recs, dry_run=args.dry_run)))
+        elif args.cmd == "link":
+            print(store.link(args.id, args.entity, kind=args.kind, weight=args.weight))
+        elif args.cmd == "unlink":
+            print(store.unlink(args.id, args.entity))
+        elif args.cmd == "entities":
+            if args.rebuild:
+                print(json.dumps(store.reindex_entities()))
+            for e in store.top_entities(limit=args.limit):
+                mark = " explicit" if e["explicit"] else ""
+                print(f"{e['memories']:4}  {e['name']}  [{e['kind']}{mark}]")
+        elif args.cmd == "links":
+            for e in store.entities_for(args.id):
+                mark = " explicit" if e["explicit"] else ""
+                print(f"{e['weight']:.2f}  {e['name']}  [{e['kind']}{mark}]")
         elif args.cmd == "serve":
             from .mcp import Server
 

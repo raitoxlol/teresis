@@ -273,6 +273,69 @@ pip install git+https://github.com/raitoxlol/teresis.git
 
 The database defaults to `$TERESIS_DB`, else `~/.local/share/teresis/memory.db`.
 
+### Inspect it: `teresis ui`
+
+A local, read-mostly inspector over the same SQLite file — no server, no build step, binds to
+`127.0.0.1`:
+
+```bash
+teresis ui                 # http://127.0.0.1:7878/
+teresis ui --port 7900 --no-browser
+```
+
+Browse by scope, search with the real recall engine, open a memory to see its versions and
+entities, then pin, edit (new version) or forget it. Writes need
+`Authorization: Bearer $TERESIS_UI_TOKEN` when that variable is set.
+
+### Wire every agent at once: `teresis setup` + `teresis doctor`
+
+```bash
+teresis setup --dry-run    # show what would change
+teresis setup              # Claude Code, Cursor, Codex and Hermes -> one memory.db
+teresis doctor             # prove it works end to end
+```
+
+`setup` is idempotent and merge-safe: it adds or replaces only the `teresis` MCP entry
+(`mcpServers.teresis` in JSON configs, `[mcp_servers.teresis]` in Codex TOML), leaves every other
+key untouched, and refuses to clobber a config it cannot parse. `doctor` checks Python, SQLite
+FTS5 + trigram, a real write -> recall -> forget round trip, the entity graph, the optional
+embedder (`--embed`), and whether each installed client is actually pointed at this store.
+
+### Entities and multi-hop recall
+
+Facts that share no words still connect through the things they name. Teresis extracts entities
+deterministically (no LLM): `[[wiki links]]`, `@mentions`, hosts, paths, `owner/repo`, and
+proper-noun spans. An inferred entity becomes traversable once it appears in two memories, so
+one-off sentence-initial words never pollute the graph.
+
+```bash
+teresis link <id> "Priya" --kind person     # explicit, always traversable
+teresis links <id>                          # what this memory is attached to
+teresis entities --limit 20                 # the graph, by memory count
+teresis entities --rebuild                  # deterministic re-index of all content
+```
+
+Recall then adds one entity hop (`Weights(entity_hop=0.45)`), so *"Priya is on leave"* surfaces
+when you ask about *"the billing service"* if *"Priya owns the billing service"* ranked first.
+Scope rules still apply, and `--explain` shows `why: {entity_hop: priya}`. Set
+`TERESIS_WEIGHTS='{"entity_hop": 0}'` (or pass `Weights`) to turn it off.
+
+### Sync between machines: `teresis sync`
+
+```bash
+export TERESIS_SYNC_KEY="$(openssl rand -hex 32)"   # same value on every machine
+teresis sync export --out teresis.bundle.json
+teresis sync push --to nucbox:/srv/teresis.bundle.json
+teresis sync pull --from nucbox:/srv/teresis.bundle.json
+teresis sync merge --from ~/backup/memory.db        # plain SQLite, no passphrase
+```
+
+Bundles are PBKDF2-HMAC-SHA256 -> ChaCha20 -> HMAC-SHA256 (encrypt-then-MAC), implemented on the
+standard library alone; a wrong passphrase or a single flipped byte fails the MAC. Merging is
+deterministic and idempotent: memories match by `id` and resolve by `updated_at`, and a keyed slot
+that exists under two ids keeps the newer value while both histories survive. `--dry-run` reports
+what would change.
+
 ### Hermes Agent
 
 ```bash
