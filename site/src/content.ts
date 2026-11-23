@@ -88,9 +88,9 @@ export const STEPS: Step[] = [
 ];
 
 export const SNIPPETS = {
-  Hermes: `pip install git+https://github.com/raitoxlol/teresis.git
+  Hermes: `brew install raitoxlol/tap/teresis
 teresis hermes install && hermes config set memory.provider teresis`,
-  MCP: `pip install git+https://github.com/raitoxlol/teresis.git
+  MCP: `brew install raitoxlol/tap/teresis
 claude mcp add teresis -- teresis serve --scope project/atlas --scope user`,
   HTTP: `teresis http --port 7077 --scope global &
 curl -s localhost:7077/tools/memory_recall \\
