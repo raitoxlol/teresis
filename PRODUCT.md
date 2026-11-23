@@ -31,7 +31,7 @@ a CLI and a Python API, all sharing one store. Several agents can share it at on
 
 ## Capabilities and Constraints
 
-- Distribution: **Apache 2.0 open source** at `https://github.com/raitoxlol/teresis` and PyPI (`pip install teresis`).
+- Distribution: **Apache 2.0 open source** at `https://github.com/raitoxlol/teresis`.
 - Primary conversion while private: **waitlist sign-up**. Provider not chosen yet.
 - Install commands may appear only as a preview for people who already have access.
 
