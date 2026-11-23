@@ -11,3 +11,4 @@ dist-check
 .taste-skill/rendered.html
 .taste-skill/*.txt
 !.taste-skill/brand-css.txt
+.vercel
