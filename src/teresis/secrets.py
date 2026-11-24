@@ -17,12 +17,6 @@ import re
 from dataclasses import dataclass
 from typing import Callable
 
-# Published documentation/example values that match real key shapes.
-_ALLOWLIST = frozenset({
-    "AKIAIOSFODNN7EXAMPLE",                      # AWS docs access key
-    "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",  # AWS docs secret key
-})
-
 # Words that mark a value as a placeholder rather than a live credential.
 _PLACEHOLDER_WORDS = frozenset(
     """your youre placeholder example sample dummy fake test testing demo redacted change changeme
@@ -48,7 +42,7 @@ def _placeholder_parts(v: str) -> set[str]:
 def _is_placeholder(v: str) -> bool:
     """True when ``v`` looks like a doc placeholder/reference rather than a real credential."""
     v = v.strip().rstrip(_TRAIL).strip("'\"")
-    if len(v) < 16 or v in _ALLOWLIST:
+    if len(v) < 16:
         return True
     if v[0] in "$<`{[(" or any(c in v for c in "([{<$"):
         return True
@@ -83,7 +77,7 @@ def _env_repl(m: re.Match[str], marker: str) -> str:
 
 def _uri_check(m: re.Match[str]) -> bool:
     v = m.group(1)
-    if len(v) < 4 or v in _ALLOWLIST or v[0] in "$<`{[(":
+    if len(v) < 4 or v[0] in "$<`{[(":
         return False
     if re.fullmatch(r"[x*._\-]+", v):
         return False
@@ -112,8 +106,7 @@ _RULES: list[_Rule] = [
         r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})")),
     _Rule("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}")),
     _Rule("huggingface_token", re.compile(r"\bhf_[A-Za-z0-9]{20,}")),
-    _Rule("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}"),
-          check=lambda m: m.group(0) not in _ALLOWLIST),
+    _Rule("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}")),
     _Rule("bearer_token", re.compile(
         r"(?i)\bbearer\s+([A-Za-z0-9._~+/=-]{20,})"
         r"|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), repl=_bearer_repl),

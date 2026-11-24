@@ -180,12 +180,16 @@ class SecretsTests(unittest.TestCase):
             "the monkey keyboard tokenizer session",
             "Never commit secrets",
             "We switched from npm to pnpm",
-            "AKIAIOSFODNN7EXAMPLE is the AWS docs example",
             "password=correct horse battery staple",
             "remember to rotate the key=soon please",
         ]
         for t in clean:
             self.assertIsNone(contains_secret(t), t)
+
+    def test_documentation_key_shaped_values_are_redacted(self):
+        out, kinds = redact_secrets("AWS docs show AKIAIOSFODNN7EXAMPLE as an example")
+        self.assertEqual(out, "AWS docs show [REDACTED:aws_access_key] as an example")
+        self.assertEqual(kinds, ["aws_access_key"])
 
     def test_redact_replaces_only_the_secret_span(self):
         text, kinds = redact_secrets(
