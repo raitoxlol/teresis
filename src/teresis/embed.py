@@ -125,6 +125,22 @@ def pack(vec: Sequence[float]) -> bytes:
     return array("f", (x / norm for x in vec)).tobytes()
 
 
+class InvalidEmbeddingBatch(ValueError):
+    def __init__(self, message: str, *, has_vectors: bool):
+        super().__init__(message)
+        self.has_vectors = has_vectors
+
+
+def pack_batch(vectors: Sequence[Sequence[float]], expected: int) -> list[bytes]:
+    if len(vectors) != expected:
+        raise InvalidEmbeddingBatch(f"embedding vector count mismatch: expected {expected}, got {len(vectors)}",
+                                    has_vectors=any(vectors))
+    if not all(vectors):
+        raise InvalidEmbeddingBatch("incomplete embedding response: a vector is empty",
+                                    has_vectors=any(vectors))
+    return [pack(vector) for vector in vectors]
+
+
 def unpack(blob: bytes) -> array:
     out = array("f")
     out.frombytes(blob)

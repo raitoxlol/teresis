@@ -433,8 +433,9 @@ teresis embed --db "${TERESIS_DB:-$HOME/.local/share/teresis/memory.db}"
 ```
 
 Hermes commits automatic episodes and extracted facts to SQLite before background embedding.
-They are searchable by text immediately. The owning profile retries any unfinished indexing
-on the next automatic save or session start. See [Embeddings](#embeddings-optional) and
+They are searchable by text immediately. If the embedding service rejects one capture,
+the owning profile can index the rest and retry the rejected capture on the next automatic
+save or session start. See [Embeddings](#embeddings-optional) and
 [Optional local reranker](#optional-local-reranker).
 
 Migrate existing built-in Hermes `MEMORY.md` and `USER.md` files (non-destructive, idempotent, secret-scrubbed):
