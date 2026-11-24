@@ -441,7 +441,7 @@ export function Book({fact, onTell, onForget, onStep}: PageProps & {onStep: (spr
         <section className="paper-intro" id="top">
           <div className="wrap">
             <h1>Tell your agents once</h1>
-            <p>Teresis is local long-term memory for AI agents. Your facts, preferences and decisions live in one SQLite file shared by Hermes, Claude Code, Codex and other MCP clients. Writes make zero LLM calls.</p>
+            <p>Teresis is a memory provider for Hermes Agent. It helps Hermes remember what you tell it between chats.</p>
           </div>
         </section>
         <div ref={host}>
@@ -458,7 +458,7 @@ export function Book({fact, onTell, onForget, onStep}: PageProps & {onStep: (spr
   return (
     <main id="main" className="book-track book-main" data-mode="book" style={style}>
       <h1 className="sr-only" id="top">Tell your agents once</h1>
-      <p className="sr-only">Teresis is local long-term memory for AI agents. Your facts, preferences and decisions live in one SQLite file shared by Hermes, Claude Code, Codex and other MCP clients. Writes make zero LLM calls.</p>
+      <p className="sr-only">Teresis is a memory provider for Hermes Agent. It helps Hermes remember what you tell it between chats.</p>
       <div className="book-stage3d" ref={stage}>
         <p className="book-hint" data-hidden={opened || mode !== 'book'} aria-hidden="true">{matchMedia('(pointer: coarse)').matches ? 'Swipe to open' : 'Scroll to open'}</p>
       </div>

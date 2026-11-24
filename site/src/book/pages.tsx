@@ -2,8 +2,8 @@ import {Bookplate, TitlePage, TryTablePage, TryTerminalPage, ScopePage, MethodPa
 import {LiveBenchPage, EvaluationPage, InstallPage, InstallCommandPage, QuestionsPage, ClosingPage, ColophonPage, BackCoverPage} from './spreads/b';
 
 export const PAGES = [
-  {id: 'bookplate', title: 'Kept for you', Content: Bookplate, endpaper: true},
-  {id: 'title-page', title: 'Teresis', Content: TitlePage},
+  {id: 'title-page', title: 'Teresis', Content: TitlePage, endpaper: true},
+  {id: 'bookplate', title: 'Kept for you', Content: Bookplate},
   {id: 'try', title: 'Try it', Content: TryTablePage},
   {id: 'try-terminal', title: 'Try it', Content: TryTerminalPage},
   {id: 'how', title: 'Method', Content: ScopePage},

@@ -45,12 +45,10 @@ export function Bookplate({fact, onTell, onForget}: {fact?: string; onTell?: (fa
 
 export function TitlePage() {
   return (
-    <div className="sa-title">
-      <img className="sa-mark" src={MARK} alt="" />
+    <div className="sa-bookplate sa-opening">
       <h2>Teresis</h2>
-      <p className="sa-etymology"><span lang="el">τήρησις</span> · faithful keeping</p>
-      <p className="sa-statement">Memory for your agents</p>
-      <p className="sa-introduction">Tell one agent which editor you use. Another can recall it from the same SQLite file in a fresh session.</p>
+      <p>A memory provider for Hermes Agent.</p>
+      <p>It helps Hermes remember what you tell it between chats.</p>
       <a href={GITHUB} target="_blank" rel="noopener noreferrer">Read Teresis on GitHub</a>
     </div>
   );

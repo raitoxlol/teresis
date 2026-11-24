@@ -7,10 +7,6 @@
   color: var(--sa-ink);
 }
 
-[data-mode="book"] .book-sheet .book-page:has(.sa-bookplate) {
-  background: transparent;
-}
-
 .sa-mark {
   display: block;
   filter: invert(49%) sepia(44%) saturate(789%) hue-rotate(1deg) brightness(93%) contrast(91%);
@@ -46,6 +42,17 @@
 .sa-bookplate p {
   font: 25px/1.3 var(--font-mono);
   overflow-wrap: anywhere;
+}
+
+.sa-opening p {
+  margin-top: 16px;
+  font: 24px/1.35 var(--font-text);
+}
+.sa-opening p:first-of-type {
+  font: 600 36px/1.1 var(--font-display);
+}
+.sa-opening a {
+  font: 20px/1.3 var(--font-text);
 }
 
 .sa-bookplate .sa-kept::before {
