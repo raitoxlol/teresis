@@ -449,6 +449,14 @@ class MemoryStore:
         )
         return res
 
+    def supersede(self, old_id: str, new_id: str) -> bool:
+        """Mark ``old_id`` as replaced by ``new_id`` (history kept). False when old is already gone."""
+        with self._write() as c:
+            n = c.execute(
+                "UPDATE memories SET superseded_by=?, superseded_at=? WHERE id=? AND superseded_by IS NULL "
+                "AND deleted_at IS NULL", [new_id, self.clock(), old_id]).rowcount
+        return bool(n)
+
     def forget(self, memory_id: str | None = None, *, scope: str | None = None, key: str | None = None,
                hard: bool = False) -> int:
         """Soft-delete (default) or hard-delete by id, or by scope+key. Returns rows affected."""
@@ -771,7 +779,7 @@ class MemoryStore:
             log.debug("touch skipped: %s", exc)
 
     def context(self, scope: str | Sequence[str] = "global", *, query: str = "", budget_tokens: int = 1200,
-                exclude_kinds: Sequence[str] = ("episode",)) -> str:
+                exclude_kinds: Sequence[str] = ("episode", "candidate")) -> str:
         """A ready-to-inject prompt block: pinned + relevant + important memories within a token budget."""
         active, aparams = self._active_sql("m")
         scope_sql, sparams = self._scope_filter(scope, True)

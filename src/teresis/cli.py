@@ -117,6 +117,12 @@ def build_parser() -> argparse.ArgumentParser:
     sc = sub.add_parser("scrub", help="find bad auto-extracted rows (dry-run unless --apply)", parents=[common])
     sc.add_argument("--apply", action="store_true",
                     help="soft-delete flagged rows. Default is a dry-run and never runs on its own.")
+    sc.add_argument("--expiry-days", type=float, default=14.0,
+                    help="unreviewed auto-extracted rows older than this are flagged (default 14)")
+    rv = sub.add_parser("review", help="list quarantined auto-captured candidates; promote or reject them",
+                        parents=[common])
+    rv.add_argument("action", nargs="?", default="list", choices=["list", "promote", "reject"])
+    rv.add_argument("ids", nargs="*", help="memory ids (or unique prefixes of 6+ characters)")
 
     ui = sub.add_parser("ui", help="open a local memory inspector in the browser", parents=[common])
     ui.add_argument("--host", default="127.0.0.1")
@@ -243,6 +249,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             for c in res["checks"]:
                 print(f"{'ok  ' if c['ok'] else 'FAIL'} {c['name']:16} {c['detail']}")
+            queue = (res.get("provenance") or {}).get("queue") or []
+            if queue:
+                print(f"\ncandidate queue ({len(queue)}):")
+                for it in queue[:10]:
+                    print(f"  {it['id']}  [{it['intended_kind']} · origin={it['origin']} · {it['age_days']}d] "
+                          f"{(it['content'] or '')[:100]}")
             print(f"\n{'healthy' if res['ok'] else 'problems found'} · db {res['db']}")
         return 0 if res["ok"] else 1
 
@@ -252,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
             r = store.remember(
                 args.content, scope=args.scope, kind=args.kind, key=args.key, tags=args.tag,
                 importance=args.importance, pinned=args.pin, ttl_days=args.ttl_days, source=args.source,
+                meta={"origin": "user-explicit-tool", "trust": "human"},
             )
             print(json.dumps(r.to_dict()) if args.json else f"{r.status} {r.id}" +
                   (f" (replaced {', '.join(r.replaced)})" if r.replaced else ""))
@@ -281,17 +294,69 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(store.maintain(vacuum=args.vacuum)))
         elif args.cmd == "embed":
             print(f"embedded {store.embed_missing()} memories")
+        elif args.cmd == "review":
+            from . import review as _review
+
+            items = _review.queue(store)
+            if args.action == "list":
+                if args.json:
+                    print(json.dumps(items, indent=2))
+                elif not items:
+                    print("review: nothing waiting")
+                else:
+                    print(f"review: {len(items)} waiting (not injected until promoted)")
+                    for it in items:
+                        legacy = " legacy-unreviewed" if it["legacy"] else ""
+                        print(f"{it['id']}  [{it['intended_kind']} · {it['scope']} · origin={it['origin']} "
+                              f"trust={it['trust']} src={it['source']} age={it['age_days']}d "
+                              f"seen={it['sessions']}s/{it['days']}d{legacy}]\n    {it['content']}")
+                    print("promote: teresis review promote <id>…   reject: teresis review reject <id>…")
+            else:
+                known = [it["id"] for it in items]
+                done, missing = [], []
+                for raw in args.ids:
+                    hits = [i for i in known if i == raw or (len(raw) >= 6 and i.startswith(raw))]
+                    if len(hits) != 1:
+                        missing.append(raw)
+                        continue
+                    if args.action == "promote":
+                        _review.promote(store, hits[0], by="review")
+                    else:
+                        _review.reject(store, hits[0])
+                    done.append(hits[0])
+                payload = {"action": args.action, "done": done, "not_found": missing}
+                print(json.dumps(payload) if args.json else
+                      f"review {args.action}: {len(done)} done" + (f", not found/ambiguous: {', '.join(missing)}" if missing else ""))
+                if missing or (args.ids == [] and args.action != "list"):
+                    return 1
         elif args.cmd == "scrub":
+            from . import provenance as _prov
             from .extract import extraction_problem
+            from .store import DAY
 
             flagged = []
+            now = store.clock()
             for rec in store.export():
-                if rec.get("deleted_at"):
+                if rec.get("deleted_at") or rec.get("superseded_by"):
                     continue
-                reason = extraction_problem(rec.get("content") or "", kind=rec.get("kind") or "",
-                                            source=rec.get("source") or "")
+                kind, meta, source = rec.get("kind") or "", rec.get("meta") or {}, rec.get("source") or ""
+                reviewed = meta.get("promoted_by") == "review"
+                reason = None if reviewed else extraction_problem(rec.get("content") or "", kind=kind, source=source)
+                if not reason and kind != "episode" and not reviewed:
+                    origin = _prov.effective_origin(meta, source, kind)
+                    expired = rec.get("expires_at") is not None and rec["expires_at"] <= now
+                    age = now - (rec.get("created_at") or now)
+                    if source == "hermes:pre-compress":
+                        reason = "pre-compress-source"
+                    elif origin == _prov.AUTO_CANDIDATE and not _prov.is_promoted(meta):
+                        if kind == _prov.CANDIDATE_KIND and expired:
+                            reason = "expired-candidate"
+                        elif kind != _prov.CANDIDATE_KIND and age > args.expiry_days * DAY:
+                            reason = "stale-unreviewed-auto"
+                    elif origin == _prov.SYSTEM_TURN:
+                        reason = "system-turn-row"
                 if reason:
-                    flagged.append({"id": rec["id"], "kind": rec.get("kind"), "source": rec.get("source"),
+                    flagged.append({"id": rec["id"], "kind": kind, "source": rec.get("source"),
                                     "reason": reason, "content": rec.get("content")})
             removed = 0
             if args.apply:

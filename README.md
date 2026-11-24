@@ -381,9 +381,9 @@ What the provider does on each Hermes hook:
 | Hook | Behavior |
 | --- | --- |
 | `prefetch` | Hybrid recall over `hermes/<profile>` + `user` + `global`, injected before each turn. Trivial prompts ("ok", "thanks", slash commands) skip recall. |
-| `sync_turn` | Saves the turn as an `episode` (30-day TTL, low importance, kept out of fact recall) and extracts stated preferences, rules and decisions. |
+| `sync_turn` | Saves the turn as an `episode` (30-day TTL, low importance, kept out of fact recall). If the turn is provably human-authored (see [Auto-capture trust](#auto-capture-trust)) it also extracts stated preferences, rules and decisions. |
 | `on_memory_write` | Mirrors Hermes' built-in `memory` tool. `add` → remember, `replace` → new version of the matching memory, `remove` → forget. |
-| `on_pre_compress` | Extracts durable facts from messages about to be compressed, and lists them for the summary. |
+| `on_pre_compress` | Checkpoints a metadata-only episode. It does not extract anything by default, because the messages include model-written compaction summaries and system prompts. |
 | `on_delegation` | Records the subagent task and its result as an episode. |
 | subagent / cron / flush | Read-only. Write tools return an error, and the hooks do not save anything. |
 
@@ -399,7 +399,10 @@ Config goes under `plugins.teresis` in `config.yaml`:
 | `rerank` / `rerank_model` | `""` | Optional local ONNX cross-encoder (`fastembed` / `Xenova/ms-marco-MiniLM-L-6-v2`). |
 | `capture_turns` | `true` | Save turns as episodes |
 | `episode_ttl_days` | `30` | `0` keeps them forever |
-| `auto_extract` | `true` | Rule-based; precision over recall |
+| `auto_extract` | `true` | Rule-based; precision over recall. See [Auto-capture trust](#auto-capture-trust). |
+| `extract_on_pre_compress` | `false` | Compaction summaries are model-written, so extraction there is off. If you turn it on, rows land in the candidate quarantine only. |
+| `candidate_ttl_days` | `14` | Unpromoted candidates expire after this many days |
+| `system_authors` / `untrusted_platforms` / `interactive_platforms` | `""` | Comma-separated additions to the built-in trust lists |
 | `prefetch_k` / `prefetch_budget_tokens` | `6` / `700` | Injection size |
 | `prefetch_min_score` | `0.45` | Score floor for automatic prefetch only. Tool `memory_recall` is not filtered. |
 
@@ -504,13 +507,35 @@ Re-scores the top first-stage candidates with a local ONNX cross-encoder (no clo
 
 ## Maintenance
 
+### Auto-capture trust
+
+A phrase denylist always loses to new wrapper text, so auto-capture is an allowlist with provenance and a quarantine:
+
+1. **Trust gate.** Teresis extracts only from a turn that is provably typed by a person. It uses the `turn_author` (`{id, name, is_bot}`) and `platform` that Hermes already passes. A turn is not human if `is_bot` is true, the author name or id is a system author (`Kanban dispatcher`, `cron`, `webhook`, `system`, `gateway`, `scheduler`, …), or the platform is `kanban`, `cron`, `webhook`, `system` or `batch`. Hermes sends no `turn_author` for an ordinary chat turn, so a missing author counts as human only on an interactive platform (`cli`, `telegram`, `discord`, `slack`, `imessage`, `photon`, …). A missing author on any other platform means no extraction. Text that looks like a task body, notice, cron wake-up, compaction summary or `<memory-context>` block is also refused, whoever sent it. Episodes are still captured and carry `meta.trust`.
+2. **Provenance.** Every row has `meta.origin`: `user-typed`, `user-explicit-tool` (the CLI), `assistant-tool` (the memory tool, MCP), `import`, `auto-candidate`, or `system-turn` for episodes. Rows written before this change are classified by `source`.
+3. **Quarantine.** A claim the extractor finds without a strong marker is stored as kind `candidate` (importance 0.2, expires in 14 days). Candidates are searchable with `memory_recall`, labelled `candidate`, and never injected by prefetch or `memory_context`. A candidate becomes a preference, decision, procedure or fact when:
+   - a human turn states it with a strong marker (`remember`, `always`, `never`, `from now on`, `I prefer`), which stores it directly,
+   - the same claim is seen in 2+ distinct sessions on 2+ distinct days, or
+   - you run `teresis review promote <id>`.
+4. **Prefetch** injects only non-candidates, never an unreviewed auto-extracted row, and never a row that matches the system/injected detector, promoted or not.
+5. **Compaction.** `on_pre_compress` never creates durable rows by default. It writes a metadata-only checkpoint episode.
+
+```bash
+teresis review                      # candidates and old unreviewed auto rows, with origin and trust
+teresis review promote <id> [<id>…] # make a standing memory
+teresis review reject <id> [<id>…]  # soft-delete
+teresis doctor                      # counts by origin/kind, candidate queue, untrusted rows
+```
+
+Hermes passes `turn_author` and `platform`, not an explicit origin for the turn. A proposal for a `turn_origin` argument is in [`docs/upstream-issue-turn-origin.md`](docs/upstream-issue-turn-origin.md). It is a draft and has not been filed.
+
+### Cleanup
+
 `teresis maintain` hard-deletes expired memories and memories soft-deleted more than 30 days ago, then
 optimizes the FTS indexes. `teresis export > backup.jsonl` and `teresis import < backup.jsonl` round-trip
 the full history.
 
-`teresis scrub` finds auto-extracted rows that are one-off wants or system/compaction text
-(`hermes:auto-extract` and `hermes:pre-compress` only). It is dry-run unless you pass `--apply`,
-and nothing calls it automatically.
+`teresis scrub` finds auto-extracted rows that are one-off wants or system/compaction text, any non-episode row with source `hermes:pre-compress`, expired candidates, and unreviewed `auto-candidate` rows older than `--expiry-days` (14). It skips rows you promoted with `teresis review`. It is dry-run unless you pass `--apply`, `--apply` only soft-deletes, and nothing calls it automatically.
 
 ```bash
 teresis scrub --db "${TERESIS_DB:-$HOME/.local/share/teresis/memory.db}"

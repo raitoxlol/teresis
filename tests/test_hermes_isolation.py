@@ -59,7 +59,7 @@ class HermesIsolationTests(unittest.TestCase):
         home = self.Homes[name]
         p = TeresisMemoryProvider(config={"db_path": str(home / "synthetic.db"), **settings})
         self.addCleanup(p.shutdown)
-        p.initialize(f"session-{name}", hermes_home=str(home), agent_identity=name)
+        p.initialize(f"session-{name}", hermes_home=str(home), agent_identity=name, platform="cli")
         return p
 
     def remember(self, p, profile):
