@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode} from 'react';
+import {useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type Ref} from 'react';
 import {FAQ, STEPS} from './content';
 import {
   DEMO_STEPS,
@@ -20,6 +20,7 @@ import {
   scopeChain,
 } from './data';
 import {Lotus} from './components/Lotus';
+import {Book, NAV_ITEMS} from './book/Book';
 
 const GITHUB = 'https://github.com/raitoxlol/teresis';
 const LICENSE = `${GITHUB}/blob/main/LICENSE`;
@@ -27,13 +28,13 @@ const BASE = import.meta.env.BASE_URL;
 const LOGO = `${BASE}logos/teresis-lockup-white.svg`;
 const REDUCED = '(prefers-reduced-motion: reduce)';
 
-function cli(line: string) {
+export function cli(line: string) {
   const bracket = line.indexOf('[');
   if (bracket < 0) return line;
   return <>{line.slice(0, bracket)}<span>[</span>{line.slice(bracket + 1)}</>;
 }
 
-function CopyButton({text, label = 'Copy commands'}: {text: string; label?: string}) {
+export function CopyButton({text, label = 'Copy commands'}: {text: string; label?: string}) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | undefined>(undefined);
 
@@ -58,7 +59,7 @@ function CopyButton({text, label = 'Copy commands'}: {text: string; label?: stri
   }
 
   return (
-    <button className="btn btn--secondary copy-button" type="button" onClick={copy} aria-label={label}>
+    <button className="book-button copy-button" type="button" onClick={copy} aria-label={label}>
       {copied ? 'Copied' : 'Copy'}
       <span className="sr-only" aria-live="polite">{copied ? 'Copied to clipboard.' : ''}</span>
     </button>
@@ -73,7 +74,7 @@ function LogoLink({footer = false}: {footer?: boolean}) {
   );
 }
 
-function useTabKeys(event: KeyboardEvent<HTMLButtonElement>, index: number, count: number, select: (i: number) => void) {
+export function useTabKeys(event: KeyboardEvent<HTMLButtonElement>, index: number, count: number, select: (i: number) => void) {
   const next = event.key === 'ArrowRight' || event.key === 'ArrowDown';
   const previous = event.key === 'ArrowLeft' || event.key === 'ArrowUp';
   if (!next && !previous && event.key !== 'Home' && event.key !== 'End') return;
@@ -88,7 +89,7 @@ function useTabKeys(event: KeyboardEvent<HTMLButtonElement>, index: number, coun
 // empty store). Nothing leaves the browser: the fact is kept in localStorage so a return visit
 // is greeted with it, the way an agent with Teresis would be.
 const YOU_KEY = 'teresis.you.v1';
-const YOU_EXAMPLES = ['I deploy on Fridays', 'Keep answers short', 'I write Rust'];
+const YOU_EXAMPLES = ['Keep answers short', 'I write Rust'];
 const YOU_STOP = new Set(['the', 'and', 'for', 'you', 'your', 'are', 'with', 'that', 'this', 'have', 'not', 'but', 'use', 'like', 'prefer', 'always', 'never', 'keep', 'call', 'from', 'into', 'only']);
 
 type Told = {fact: string; id: string; at: number};
@@ -209,7 +210,7 @@ function YouTerminal({told, returning, onTell, onForget}: {told: Told | null; re
       </div>
       {asking ? (
         <form className="you-body you-form" onSubmit={(event) => { event.preventDefault(); tell(draft); }}>
-          <label className="you-comment" htmlFor="you-fact">{forgotten ? '# Forgotten. Tell your agents something else about you.' : '# Tell your agents one thing about you.'}</label>
+          <label className="you-comment" htmlFor="you-fact">{forgotten ? '# Forgotten. Tell your agents something else about you.' : '# Tell your agents one fact.'}</label>
           <div className="command-line you-line">
             <span aria-hidden="true">$ </span>teresis remember "
             <span className="you-field"><input
@@ -226,9 +227,9 @@ function YouTerminal({told, returning, onTell, onForget}: {told: Told | null; re
             />" -s user</span>
           </div>
           <div className="you-actions">
-            <button className="you-run" type="submit">Remember</button>
+            <button className="book-button book-button--gold" type="submit">Remember</button>
             <span className="you-or">or try</span>
-            {YOU_EXAMPLES.map((example) => <button className="you-chip" type="button" key={example} onClick={() => tell(example)}>{example}</button>)}
+            {YOU_EXAMPLES.map((example) => <button className="you-try" type="button" key={example} onClick={() => tell(example)}>{example}</button>)}
           </div>
           <p className="you-note">Runs in this tab. Nothing is sent anywhere.</p>
         </form>
@@ -246,8 +247,8 @@ function YouTerminal({told, returning, onTell, onForget}: {told: Told | null; re
           <div className={`you-after${done ? ' is-shown' : ''}`} hidden={!done}>
             <p>{returning ? `You said this ${since(told.at)}. Hermes found it without being told again.` : 'Codex knew it in a fresh session. Claude Code and Hermes read the same file.'}</p>
             <div className="you-after-actions">
-              <button className="you-chip" type="button" onClick={again}>Tell it something else</button>
-              <button className="you-chip" type="button" onClick={forget}>Forget it</button>
+              <button className="book-button" type="button" onClick={again}>Tell it something else</button>
+              <button className="book-button" type="button" onClick={forget}>Forget it</button>
             </div>
           </div>
         </div>
@@ -256,48 +257,34 @@ function YouTerminal({told, returning, onTell, onForget}: {told: Told | null; re
   );
 }
 
-function Hero() {
-  const [told, setTold] = useState<Told | null>(loadTold);
-  const [returning, setReturning] = useState(() => told !== null);
-
-  function tell(fact: string) {
-    const next = {fact, id: memoryId(), at: Date.now()};
-    saveTold(next);
-    setTold(next);
-    setReturning(false);
-  }
-
-  function forget() {
-    saveTold(null);
-    setTold(null);
-    setReturning(false);
-  }
-
+function Hero({contentRef, coverRef, ...props}: Parameters<typeof YouTerminal>[0] & {
+  contentRef: Ref<HTMLDivElement>;
+  coverRef: Ref<HTMLElement>;
+}) {
+  const {told, returning} = props;
   return (
-    <section className="hero hero--centred ground-surface" data-enter aria-labelledby="hero-title" id="top" style={{'--h': 1} as CSSProperties}>
-      <div className="wrap">
+    <section className="hero book-hero" aria-labelledby="hero-title" id="top" data-enter ref={coverRef}>
+      <div className="wrap book-hero-content" ref={contentRef}>
         <div className="hero-text">
-          <div className="hero-copy">
+          <div className="book-hero-copy">
             {returning && told && <p className="hero-welcome">Welcome back. Your agents still know “{told.fact}”</p>}
             <h1 id="hero-title">Tell your agents once</h1>
-            <p className="hero-lead">Teresis is local long-term memory for AI agents. Your facts, preferences and decisions live in one SQLite file shared by Hermes, Claude Code, Codex and other MCP clients. Writes make zero LLM calls.</p>
-            <div className="btn-row hero-actions">
-              <a className="btn btn--primary" href="#install">Install Teresis</a>
-              <a className="btn btn--secondary" href="#benchmarks">See the benchmarks</a>
+            <p className="hero__lead book-hero-lead">Teresis is local long-term memory for AI agents. Your facts, preferences and decisions live in one SQLite file shared by Hermes, Claude Code, Codex and other MCP clients. Writes make zero LLM calls.</p>
+            <div className="btn-row book-hero-actions">
+              <a className="book-button book-button--gold" href="#install">Install Teresis</a>
+              <a className="book-button" href="#benchmarks">See the benchmarks</a>
             </div>
-            <p className="hero-proof">Live Hermes test: <strong>{LIVE.teresis.right}/{LIVE.teresis.asked}</strong> with Teresis, <strong>{LIVE.stock.right}/{LIVE.stock.asked}</strong> with stock memory.</p>
+            <p className="book-hero-proof">Live Hermes test: {LIVE.teresis.right}/{LIVE.teresis.asked} with Teresis, {LIVE.stock.right}/{LIVE.stock.asked} with stock memory.</p>
           </div>
-          <div className="hero-visual">
-            <YouTerminal told={told} returning={returning} onTell={tell} onForget={forget} />
-            <div className="hero-lotus-mark" aria-hidden="true"><Lotus intro grid /></div>
-          </div>
+          <img className="book-hero-still" src={`${BASE}book/closed.webp`} srcSet={`${BASE}book/closed-small.webp 400w, ${BASE}book/closed.webp 1200w`} sizes="(max-width: 599px) 168px, (max-width: 959px) 490px, 56vw" alt="" width={1200} height={989} fetchPriority="high" />
+          <YouTerminal {...props} />
         </div>
       </div>
     </section>
   );
 }
 
-function GuidedTerminal() {
+export function GuidedTerminal() {
   const [selected, setSelected] = useState(2);
   const [visibleRowsAt, setVisibleRowsAt] = useState(2);
   const [pending, setPending] = useState(false);
@@ -440,7 +427,7 @@ function GuidedTerminal() {
   );
 }
 
-function ScopeExplorer() {
+export function ScopeExplorer() {
   const [selectedScope, setSelectedScope] = useState('project/atlas/agent-x');
   const chain = useMemo(() => scopeChain(selectedScope), [selectedScope]);
   const children: Record<string, string[]> = {
@@ -497,7 +484,7 @@ function ScopeExplorer() {
   );
 }
 
-function HowSection() {
+export function HowSection() {
   const cards: {title: string; body: string; variant: string; rows: {label: string; value: ReactNode}[]}[] = [
     {title: STEPS[0].title, body: 'One SQLite file holds facts and preferences for every agent.', variant: 'file', rows: [{label: 'File', value: <code>~/.local/share/teresis/memory.db</code>} ]},
     {title: STEPS[1].title, body: 'Keyed updates keep replaced facts in history.', variant: 'history', rows: [{label: 'Superseded', value: <code>Editor is VS Code</code>}, {label: 'Current', value: <code>Editor is Neovim</code>}]},
@@ -547,7 +534,7 @@ const diagramSpec = {
   alt: 'Hermes Agent, Claude Code, Codex and Cursor share memory.db',
 };
 
-function WorksWith() {
+export function WorksWith() {
   return (
     <section className="section works-section" id="works-with" aria-labelledby="works-title" style={{'--h': 1, '--hm': 2} as CSSProperties}>
       <div className="wrap">
@@ -602,7 +589,7 @@ function Statement() {
   );
 }
 
-function TabButtons({items, active, select, prefix}: {items: {id: string; label: string}[]; active: number; select: (i: number) => void; prefix: string}) {
+export function TabButtons({items, active, select, prefix}: {items: {id: string; label: string}[]; active: number; select: (i: number) => void; prefix: string}) {
   return (
     <div className="tabs" role="tablist" aria-label={prefix === 'bench' ? 'Benchmark results' : 'Install methods'}>
       {items.map((item, index) => (
@@ -625,7 +612,7 @@ function TabButtons({items, active, select, prefix}: {items: {id: string; label:
   );
 }
 
-function PairBars() {
+export function PairBars() {
   return (
     <div className="kind-results">
       {LIVE.byKind.map((row) => (
@@ -641,7 +628,7 @@ function PairBars() {
   );
 }
 
-function E2ETable() {
+export function E2ETable() {
   return (
     <div className="e2e-table-wrap">
       <table className="e2e-table">
@@ -657,7 +644,7 @@ function E2ETable() {
   );
 }
 
-function MetricRows({rows, metrics, note, label}: {rows: BenchRow[]; metrics: Metric[]; note: string; label: string}) {
+export function MetricRows({rows, metrics, note, label}: {rows: BenchRow[]; metrics: Metric[]; note: string; label: string}) {
   const [metric, setMetric] = useState(metrics[0].id);
   const [sort, setSort] = useState<'score' | 'time'>('score');
   const [revision, setRevision] = useState(0);
@@ -704,7 +691,7 @@ function MetricRows({rows, metrics, note, label}: {rows: BenchRow[]; metrics: Me
   );
 }
 
-function BenchmarkExplorer() {
+export function BenchmarkExplorer() {
   const [active, setActive] = useState(0);
   const tabs = [
     {id: 'live', label: 'Live in Hermes'},
@@ -747,7 +734,7 @@ function BenchmarkExplorer() {
   );
 }
 
-function InstallSection() {
+export function InstallSection() {
   const [active, setActive] = useState(0);
   const current = INSTALL.tabs[active];
 
@@ -787,7 +774,7 @@ function InstallSection() {
   );
 }
 
-function Questions() {
+export function Questions() {
   return (
     <section className="section questions-section g2m" id="questions" aria-labelledby="questions-title" style={{'--h': 1, '--hm': 2} as CSSProperties}>
       <div className="wrap questions-wrap">
@@ -803,7 +790,7 @@ function Questions() {
   );
 }
 
-function Closing() {
+export function Closing() {
   return (
     <footer className="footer closing footer-dark" id="contact" aria-labelledby="close-title">
       <div className="wrap closing-wrap">
@@ -843,51 +830,36 @@ function Closing() {
 }
 
 export function App() {
-  const [activeNav, setActiveNav] = useState('');
+  const [told, setTold] = useState<Told | null>(loadTold);
+  const [step, setStep] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  useEffect(() => {
-    const sections = [...document.querySelectorAll<HTMLElement>('main > section[id]')];
-    const observer = new IntersectionObserver((entries) => {
-      const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-      if (visible) setActiveNav(visible.target.id);
-    }, {rootMargin: '-25% 0px -60% 0px', threshold: [0, 0.15, 0.4, 0.7]});
-    sections.forEach((section) => observer.observe(section));
-    return () => observer.disconnect();
-  }, []);
+  function tell(fact: string) {
+    const next = {fact, id: memoryId(), at: Date.now()};
+    saveTold(next);
+    setTold(next);
+  }
 
-  const navItems = [
-    ['try', 'Try it'],
-    ['how', 'Method'],
-    ['works-with', 'Works with'],
-    ['benchmarks', 'Benchmarks'],
-    ['questions', 'Questions'],
-  ];
+  function forget() {
+    saveTold(null);
+    setTold(null);
+  }
 
   return (
     <>
       <a className="skip-link" href="#top">Skip to content</a>
-      <header className="nav nav--centre">
-        <div className="wrap nav__bar">
+      <header className="nav book-nav">
+        <div className="wrap book-nav-bar">
           <LogoLink />
-          <nav className="nav__links" aria-label="Sections">
-            {navItems.map(([id, label]) => <div className="nav__item" key={id}><a className="nav__link" href={`#${id}`} aria-current={activeNav === id ? 'page' : undefined}>{label}</a></div>)}
-            <div className="nav__item"><a className="nav__link" href={GITHUB} target="_blank" rel="noopener noreferrer">GitHub</a></div>
+          <button className="book-button book-menu" type="button" aria-expanded={menuOpen} aria-controls="book-nav-links" onClick={() => setMenuOpen(!menuOpen)}>Menu</button>
+          <nav className="book-nav-links" id="book-nav-links" data-open={menuOpen} aria-label="Sections">
+            {NAV_ITEMS.map(([id, label, index]) => <a key={id} href={`#${id}`} aria-current={step === index ? 'location' : undefined} onClick={() => setMenuOpen(false)}>{label}</a>)}
+            <a href={GITHUB} target="_blank" rel="noopener noreferrer">GitHub</a>
           </nav>
-          <div className="nav__actions"><a className="btn btn--primary" href="#install">Install Teresis</a></div>
-          <button className="nav__toggle btn btn--secondary" type="button" aria-expanded="false" aria-label="Open menu"><span aria-hidden="true">Menu</span></button>
+          <a className="book-button book-button--gold book-nav-install" href="#install" onClick={() => setMenuOpen(false)}>Install Teresis</a>
         </div>
       </header>
-      <main id="main">
-        <Hero />
-        <GuidedTerminal />
-        <HowSection />
-        <WorksWith />
-        <Statement />
-        <BenchmarkExplorer />
-        <InstallSection />
-        <Questions />
-      </main>
-      <Closing />
+      <Book fact={told?.fact} onTell={tell} onForget={forget} onStep={setStep} />
     </>
   );
 }

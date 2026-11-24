@@ -100,6 +100,7 @@ export const E2E = {
   note: 'Answered excludes questions lost to transient HTTP 429 errors from the answer model (1 for Teresis no model, 7 for mem0, 2 for holographic).',
 };
 
+export const GITHUB = 'https://github.com/raitoxlol/teresis';
 export const RESULTS_URL = 'https://github.com/raitoxlol/teresis/tree/main/bench/results';
 export const README_BENCH_URL = 'https://github.com/raitoxlol/teresis#head-to-head-longmemeval';
 

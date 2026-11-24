@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 560 800" fill="none">
+  <defs>
+    <g id="sprig">
+      <path d="M0 0C12 5 19 16 35 15S54 8 66 11Q77 15 88 9M14 9Q22 5 27 6M40 14Q45 21 54 21" stroke="#7d592d" stroke-width="1.2"/>
+      <g stroke="#785a32" stroke-width=".7">
+        <path d="M12 8Q9 0 3 0Q5 6 12 8M21 13Q17 6 22 3Q26 7 21 13M31 15Q24 16 24 22Q30 21 31 15M43 14Q39 7 46 5Q48 10 43 14M61 10Q58 5 64 2Q67 6 61 10" fill="#56694a"/>
+        <path d="M27 6Q30 0 34 2Q33 7 27 6M53 21Q59 17 62 21Q57 25 53 21M73 12Q77 5 81 6Q81 12 73 12" fill="#a88445"/>
+      </g>
+      <g fill="#924d37"><circle cx="36" cy="15" r="2.6"/><circle cx="69" cy="11" r="1.8"/></g>
+      <circle cx="89" cy="9" r="1.4" fill="#ad8040"/>
+    </g>
+    <g id="corner">
+      <path d="M0 43V0H43M4 33V4H33" stroke="#a58145" stroke-width=".9"/>
+      <use xlink:href="#sprig" transform="translate(5 5)"/>
+      <use xlink:href="#sprig" transform="translate(5 5) matrix(0 1 1 0 0 0)"/>
+      <path d="m6 6 8 3 6 11-11-6z" fill="#a98647" stroke="#725833" stroke-width=".75"/>
+      <path d="m10 10 7 7" stroke="#efe3be"/>
+    </g>
+  </defs>
+  <path d="M22 20H538V780H22Z" stroke="#ac8c51" stroke-width=".9"/>
+  <path d="M18 16H542V784H18Z" stroke="#a78652" stroke-width=".5"/>
+  <use xlink:href="#corner" transform="translate(18 16)"/>
+  <use xlink:href="#corner" transform="translate(542 16) scale(-1 1)"/>
+  <use xlink:href="#corner" transform="translate(18 784) scale(1 -1)"/>
+  <use xlink:href="#corner" transform="translate(542 784) scale(-1 -1)"/>
+</svg>
