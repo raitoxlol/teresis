@@ -1,9 +1,13 @@
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from teresis.doctor import clients, run_doctor, setup
+from teresis.doctor import clients, run_doctor, setup, tomllib
 
 
 class SetupTests(unittest.TestCase):
@@ -30,6 +34,7 @@ class SetupTests(unittest.TestCase):
         self.assertIn("other", cursor["mcpServers"])
         self.assertIn("teresis", cursor["mcpServers"])
 
+    @unittest.skipIf(tomllib is None, "Codex TOML verification needs a parser")
     def test_toml_appended_and_idempotent(self):
         setup(self.home)
         text = (self.home / ".codex" / "config.toml").read_text()
@@ -38,6 +43,21 @@ class SetupTests(unittest.TestCase):
         rows = {r["client"]: r for r in setup(self.home)}
         self.assertEqual(rows["codex"]["status"], "already")
         self.assertEqual((self.home / ".codex" / "config.toml").read_text().count("[mcp_servers.teresis]"), 1)
+
+    def test_unparsed_codex_config_is_left_untouched(self):
+        config = self.home / ".codex" / "config.toml"
+        before = config.read_bytes()
+        with patch("teresis.doctor.tomllib", None):
+            result = setup(self.home, only=["codex"])[0]
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(config.read_bytes(), before)
+
+    @unittest.skipIf(tomllib is None, "Codex TOML verification needs a parser")
+    def test_invalid_codex_config_is_left_untouched(self):
+        config = self.home / ".codex" / "config.toml"
+        config.write_text("broken = [")
+        self.assertEqual(setup(self.home, only=["codex"])[0]["status"], "failed")
+        self.assertEqual(config.read_text(), "broken = [")
 
     def test_dry_run_writes_nothing(self):
         rows = {r["client"]: r for r in setup(self.home, dry_run=True)}
@@ -55,6 +75,68 @@ class SetupTests(unittest.TestCase):
         rows = {r["client"]: r for r in setup(self.home)}
         self.assertEqual(rows["claude-code"]["status"], "failed")
         self.assertEqual((self.home / ".claude.json").read_text(), "{not json")
+
+    def test_hermes_install_is_partial_and_keeps_the_profile(self):
+        h = self.home / ".hermes"
+        h.mkdir()
+        config = h / "config.yaml"
+        config.write_text("memory:\n  provider: existing\n")
+        db = self.home / "shared.db"
+        result = setup(self.home, db=db, only=["hermes"])[0]
+        self.assertEqual(result["status"], "partial")
+        self.assertIn(str(db), result["detail"])
+        self.assertTrue((h / "plugins/teresis/plugin.yaml").is_file())
+        self.assertEqual(config.read_text(), "memory:\n  provider: existing\n")
+        self.assertFalse(next(c["ok"] for c in run_doctor(db, home=self.home)["checks"]
+                              if c["name"] == "client:hermes"))
+
+    def test_setup_pins_two_real_mcp_processes_to_the_same_database(self):
+        pinned = self.home / "shared dir" / "service 🪴.db"
+        unrelated = self.home / "wrong.db"
+        # Claude and Cursor are always testable. Also exercise the actual Codex-generated
+        # command, where a genuine TOML parser is available.
+        target = "codex" if tomllib is not None else "claude-code"
+        source = Path(__file__).resolve().parents[1] / "src"
+        env = dict(os.environ, HOME=str(self.home), PYTHONPATH=str(source), PATH=str(self.home / "empty-bin"),
+                   XDG_DATA_HOME=str(self.home / "data"), PYTHONDONTWRITEBYTECODE="1",
+                   TERESIS_DB=str(unrelated))
+        for key in list(env):
+            if key.startswith(("TERESIS_EMBED", "TERESIS_RERANK")):
+                env.pop(key)
+        cli = [sys.executable, "-B", "-m", "teresis"]
+        rows = subprocess.run([*cli, "setup", "--only", f"cursor,{target}", "--db", str(pinned), "--json"],
+                              env=env, text=True, capture_output=True, timeout=10, check=True)
+        self.assertEqual([r["status"] for r in json.loads(rows.stdout)], ["configured", "configured"])
+        cursor = json.loads((self.home / ".cursor/mcp.json").read_text())["mcpServers"]["teresis"]
+        if target == "codex":
+            writer = tomllib.loads((self.home / ".codex/config.toml").read_text())["mcp_servers"]["teresis"]
+        else:
+            writer = json.loads((self.home / ".claude.json").read_text())["mcpServers"]["teresis"]
+
+        def call_tool(entry, name, arguments, process_env):
+            messages = [
+                {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                 "params": {"protocolVersion": "2025-06-18"}},
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                 "params": {"name": name, "arguments": arguments}},
+            ]
+            result = subprocess.run([entry["command"], *entry["args"]],
+                                    env={**process_env, **entry.get("env", {})}, text=True,
+                                    input="\n".join(map(json.dumps, messages)) + "\n",
+                                    capture_output=True, timeout=10, check=True)
+            response = json.loads(result.stdout.splitlines()[-1])["result"]
+            self.assertFalse(response["isError"], response)
+            return response["structuredContent"]
+
+        nonce = "apricot orbit z27"
+        scope = "project/quality"
+        written = call_tool(writer, "memory_remember", {"content": nonce, "scope": scope}, env)
+        read_env = {k: v for k, v in env.items() if k != "TERESIS_DB"}
+        recalled = call_tool(cursor, "memory_recall", {"query": nonce, "scope": scope, "inherit": False}, read_env)
+        self.assertEqual([m["id"] for m in recalled["memories"]], [written["id"]])
+        self.assertFalse(unrelated.exists())
+        self.assertFalse((self.home / "data/teresis/memory.db").exists())
 
 
 class DoctorTests(unittest.TestCase):
@@ -89,10 +171,37 @@ class DoctorTests(unittest.TestCase):
             claude = next(c for c in res["checks"] if c["name"] == "client:claude-code")
             self.assertFalse(claude["ok"])
             self.assertIn("teresis setup", claude["detail"])
-            setup(home)
+            setup(home, db=Path(d) / "x.db")
             res = run_doctor(Path(d) / "x.db", home=home)
             claude = next(c for c in res["checks"] if c["name"] == "client:claude-code")
             self.assertTrue(claude["ok"])
+            self.assertIn("agent not started", claude["detail"])
+            res = run_doctor(Path(d) / "other.db", home=home)
+            claude = next(c for c in res["checks"] if c["name"] == "client:claude-code")
+            self.assertFalse(claude["ok"])
+
+    def test_nonempty_unpinned_launcher_is_not_healthy(self):
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            config = home / ".claude.json"
+            config.write_text(json.dumps({"mcpServers": {"teresis": {"command": "/missing", "args": ["serve"]}}}))
+            res = run_doctor(home / "x.db", home=home)
+            self.assertFalse(res["ok"])
+            self.assertFalse(next(c["ok"] for c in res["checks"] if c["name"] == "client:claude-code"))
+
+    @unittest.skipIf(tomllib is None, "Codex TOML verification needs a parser")
+    def test_disabled_codex_launcher_is_not_healthy(self):
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            config = home / ".codex" / "config.toml"
+            config.parent.mkdir()
+            db = home / "shared.db"
+            setup(home, db=db, only=["codex"])
+            with config.open("a") as f:
+                f.write('"enabled" = false\n')
+            res = run_doctor(db, home=home)
+            self.assertFalse(res["ok"])
+            self.assertFalse(next(c["ok"] for c in res["checks"] if c["name"] == "client:codex"))
 
     def test_client_detection(self):
         with tempfile.TemporaryDirectory() as d:

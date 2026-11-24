@@ -1,14 +1,4 @@
-"""One-command wiring (`teresis setup`) and health checks (`teresis doctor`).
-
-``setup`` writes an MCP entry pointing every agent it can find at the *same* SQLite file, so
-Claude Code, Cursor, Codex and Hermes all read and write one memory. It is idempotent: an
-existing entry is replaced, never duplicated, and ``--dry-run`` prints the diff instead of
-writing.
-
-``doctor`` proves the install actually works: SQLite/FTS5 capabilities, a write-read-forget
-round trip through the real store, the entity graph, the optional embedder, and whether each
-detected client can resolve the server command.
-"""
+"""Pin desktop MCP launchers to one SQLite file and check their saved configuration."""
 
 from __future__ import annotations
 
@@ -22,6 +12,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 has no standard-library TOML parser.
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        tomllib = None
+
 from . import __version__
 from .store import MemoryStore, default_db_path
 
@@ -29,16 +27,21 @@ SERVER_NAME = "teresis"
 
 
 # --------------------------------------------------------------------------- command
-def server_command() -> tuple[str, list[str], dict[str, str]]:
+def _db_path(db: str | os.PathLike | None) -> Path:
+    return (Path(db).expanduser() if db else default_db_path()).resolve()
+
+
+def server_command(db: Path) -> tuple[str, list[str], dict[str, str]]:
     """How an MCP client should launch this install (console script when available)."""
+    serve = ["serve", "--scope", "global", "--db", str(db)]
     env: dict[str, str] = {}
     exe = shutil.which("teresis")
     if exe:
-        return exe, ["serve", "--scope", "global"], env
+        return os.path.abspath(exe), serve, env
     src = Path(__file__).resolve().parents[1]
     if (src / "teresis" / "__init__.py").exists():
         env["PYTHONPATH"] = str(src)
-    return sys.executable or "python3", ["-m", "teresis", "serve", "--scope", "global"], env
+    return sys.executable or "python3", ["-m", "teresis", *serve], env
 
 
 # --------------------------------------------------------------------------- clients
@@ -67,70 +70,114 @@ def clients(home: Path | None = None) -> list[Client]:
     ]
 
 
-def _mcp_entry() -> dict[str, Any]:
-    command, args, env = server_command()
+def _mcp_entry(db: Path) -> dict[str, Any]:
+    command, args, env = server_command(db)
     entry: dict[str, Any] = {"command": command, "args": args}
     if env:
         entry["env"] = env
     return entry
 
 
-def _write_json(config: Path, *, dry_run: bool) -> str:
+def _configured_entry(data: Any, key: str) -> Any:
+    servers = data.get(key) if isinstance(data, dict) else None
+    return servers.get(SERVER_NAME) if isinstance(servers, dict) else None
+
+
+def _without_codex_entry(data: dict[str, Any]) -> dict[str, Any]:
+    servers = data.get("mcp_servers")
+    if not isinstance(servers, dict):
+        return data
+    result = dict(data)
+    others = {key: val for key, val in servers.items() if key != SERVER_NAME}
+    if others:
+        result["mcp_servers"] = others
+    else:
+        result.pop("mcp_servers")
+    return result
+
+
+def _write_json(config: Path, db: Path, *, dry_run: bool) -> str:
     data: dict[str, Any] = {}
     if config.exists():
         try:
-            data = json.loads(config.read_text() or "{}")
+            data = json.loads(config.read_text(encoding="utf-8") or "{}")
         except json.JSONDecodeError:
             return "failed: config is not valid JSON"
         if not isinstance(data, dict):
             return "failed: config root is not an object"
     servers = data.setdefault("mcpServers", {})
-    entry = _mcp_entry()
+    if not isinstance(servers, dict):
+        return "failed: mcpServers is not an object"
+    entry = _mcp_entry(db)
     if servers.get(SERVER_NAME) == entry:
         return "already configured"
     servers[SERVER_NAME] = entry
     if dry_run:
         return f"would write {config}"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(json.dumps(data, indent=2) + "\n")
+    config.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return f"configured {config}"
 
 
 _TOML_BLOCK = re.compile(r"^\[mcp_servers\.teresis\]\n(?:(?!\[).*(?:\n|\Z))*", re.M)
 
 
-def _toml_block() -> str:
-    command, args, env = server_command()
+def _toml_block(db: Path) -> str:
+    command, args, env = server_command(db)
+
+    def quote(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False)
+
     lines = [
         "[mcp_servers.teresis]",
-        f"command = {json.dumps(command)}",
-        f"args = {json.dumps(args)}",
+        f"command = {quote(command)}",
+        f"args = {quote(args)}",
     ]
     if env:
-        lines.append("env = { " + ", ".join(f"{k} = {json.dumps(v)}" for k, v in env.items()) + " }")
+        lines.append("env = { " + ", ".join(f"{k} = {quote(v)}" for k, v in env.items()) + " }")
     return "\n".join(lines) + "\n"
 
 
-def _write_toml(config: Path, *, dry_run: bool) -> str:
-    block = _toml_block()
-    text = config.read_text() if config.exists() else ""
-    if _TOML_BLOCK.search(text):
-        if _TOML_BLOCK.search(text).group(0).strip() == block.strip():
+def _write_toml(config: Path, db: Path, *, dry_run: bool) -> str:
+    block = _toml_block(db)
+    text = config.read_text(encoding="utf-8") if config.exists() else ""
+    current = _TOML_BLOCK.search(text)
+    before = None
+    if tomllib is None and text.strip():
+        return "failed: preserving existing Codex TOML requires Python 3.11+ or optional tomli"
+    if tomllib is not None:
+        try:
+            before = tomllib.loads(text)
+        except ValueError:
+            return "failed: config is not valid TOML"
+    if current:
+        if current.group(0).strip() == block.strip():
             return "already configured"
-        if dry_run:
-            return f"would replace [mcp_servers.teresis] in {config}"
-        text = _TOML_BLOCK.sub(block, text, count=1)
+        action = "replace [mcp_servers.teresis] in"
+        text = _TOML_BLOCK.sub(lambda _: block, text, count=1)
     else:
-        if dry_run:
-            return f"would append [mcp_servers.teresis] to {config}"
+        action = "append [mcp_servers.teresis] to"
         text = (text.rstrip() + "\n\n" + block) if text.strip() else block
+    if tomllib is not None:
+        try:
+            parsed = tomllib.loads(text)
+        except ValueError:
+            return "failed: updating this Teresis entry would produce invalid TOML"
+        if _configured_entry(parsed, "mcp_servers") != _mcp_entry(db):
+            return "failed: could not verify the updated Teresis entry"
+        if _without_codex_entry(parsed) != _without_codex_entry(before):
+            return "failed: updating the Teresis entry would change other Codex settings"
+    if dry_run:
+        return f"would {action} {config}"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(text)
+    config.write_text(text, encoding="utf-8")
     return f"configured {config}"
 
 
-def setup(home: Path | None = None, *, only: Iterable[str] | None = None, dry_run: bool = False) -> list[dict[str, str]]:
-    """Wire every detected MCP client to this store. Returns one row per client."""
+def setup(home: Path | None = None, *, db: str | os.PathLike | None = None,
+          only: Iterable[str] | None = None, dry_run: bool = False) -> list[dict[str, str]]:
+    """Wire detected MCP clients to one absolute DB; Hermes still needs profile setup."""
+    path = _db_path(db)
     wanted = {s.strip() for s in only} if only else None
     rows: list[dict[str, str]] = []
     for client in clients(home):
@@ -139,21 +186,26 @@ def setup(home: Path | None = None, *, only: Iterable[str] | None = None, dry_ru
         if not client.detected():
             rows.append({"client": client.id, "name": client.name, "status": "skipped", "detail": "not installed"})
             continue
-        if client.kind == "json":
-            detail = _write_json(client.config, dry_run=dry_run)
-        elif client.kind == "toml":
-            detail = _write_toml(client.config, dry_run=dry_run)
-        else:
-            if dry_run:
-                detail = f"would install Hermes provider in {client.config}"
+        try:
+            if client.kind == "json":
+                detail = _write_json(client.config, path, dry_run=dry_run)
+            elif client.kind == "toml":
+                detail = _write_toml(client.config, path, dry_run=dry_run)
             else:
-                try:
+                if dry_run:
+                    install_detail = f"would install Hermes provider in {client.config}"
+                else:
                     from .hermes import install
 
-                    detail = f"installed {install(client.config)}"
-                except Exception as exc:  # pragma: no cover - depends on a Hermes checkout
-                    detail = f"failed: {exc}"
-        status = "failed" if detail.startswith("failed") else ("configured" if detail.startswith(("configured", "installed", "would")) else "already")
+                    install_detail = f"installed {install(client.config)}"
+                detail = (f"{install_detail}; select memory.provider=teresis and set "
+                          f"plugins.teresis.db_path to {path} in the active Hermes profile")
+                rows.append({"client": client.id, "name": client.name, "status": "partial", "detail": detail})
+                continue
+        except (OSError, ValueError) as exc:
+            detail = f"failed: {exc}"
+        status = ("failed" if detail.startswith("failed")
+                  else "configured" if detail.startswith(("configured", "would")) else "already")
         rows.append({"client": client.id, "name": client.name, "status": status, "detail": detail})
     return rows
 
@@ -222,28 +274,37 @@ def _check_embedder() -> Check:
     return Check("embedder", bool(vec), f"{emb.name} → {len(vec)} dims")
 
 
-def _check_client(client: Client) -> Check:
+def _check_client(client: Client, db: Path) -> Check:
+    name = f"client:{client.id}"
     if not client.detected():
-        return Check(f"client:{client.id}", True, "not installed (skipped)")
-    if client.kind == "json":
-        if not client.config.exists():
-            return Check(f"client:{client.id}", False, f"{client.config} missing — run `teresis setup`")
-        try:
-            data = json.loads(client.config.read_text() or "{}")
-        except json.JSONDecodeError as exc:
-            return Check(f"client:{client.id}", False, f"{client.config}: {exc}")
-        entry = (data.get("mcpServers") or {}).get(SERVER_NAME)
-        return Check(f"client:{client.id}", bool(entry),
-                     f"{client.config}" + ("" if entry else " — run `teresis setup`"))
-    if client.kind == "toml":
-        text = client.config.read_text() if client.config.exists() else ""
-        return Check(f"client:{client.id}", "[mcp_servers.teresis]" in text,
-                     f"{client.config}" + ("" if "[mcp_servers.teresis]" in text else " — run `teresis setup`"))
-    return Check(f"client:{client.id}", True, f"{client.config} (provider install is separate)")
+        return Check(name, True, "not installed (skipped)")
+    if client.kind == "hermes":
+        return Check(name, False, f"{client.config}: active Hermes provider and db_path not verified; "
+                     f"check the selected profile uses Teresis and {db}")
+    if not client.config.exists():
+        return Check(name, False, f"{client.config} missing — run `teresis setup`")
+    try:
+        raw = client.config.read_text(encoding="utf-8")
+        if client.kind == "json":
+            entry = _configured_entry(json.loads(raw or "{}"), "mcpServers")
+        else:
+            if tomllib is None:
+                return Check(name, False, "Codex config unverified: needs Python 3.11+ or optional tomli")
+            entry = _configured_entry(tomllib.loads(raw), "mcp_servers")
+    except (OSError, ValueError) as exc:
+        return Check(name, False, f"{client.config}: {exc}")
+    expected = _mcp_entry(db)
+    if (not isinstance(entry, dict) or entry.get("command") != expected["command"]
+            or entry.get("args") != expected["args"] or entry.get("env", {}) != expected.get("env", {})
+            or entry.get("enabled", True) is not True or entry.get("disabled", False) is not False
+            or entry.get("url") or not os.access(expected["command"], os.X_OK)):
+        return Check(name, False, f"{client.config}: no matching enabled launcher pinned to {db} "
+                     f"— review configuration or run `teresis setup` with the same DB")
+    return Check(name, True, f"{client.config}: saved launcher pins {db} (agent not started)")
 
 
 def run_doctor(db: str | os.PathLike | None = None, *, home: Path | None = None, embed: bool = False) -> dict[str, Any]:
-    path = Path(db).expanduser() if db else default_db_path()
+    path = _db_path(db)
     checks: list[Check] = [_check_python(), _check_sqlite(), _check_store(path), _check_db(path)]
     if embed:
         checks.append(_check_embedder())
@@ -254,7 +315,7 @@ def run_doctor(db: str | os.PathLike | None = None, *, home: Path | None = None,
         checks.append(Check("graph", True, f"{stats.get('entities', 0)} entities, {stats.get('links', 0)} links"))
     except Exception as exc:
         checks.append(Check("graph", False, str(exc)))
-    checks.extend(_check_client(c) for c in clients(home))
+    checks.extend(_check_client(c, path) for c in clients(home))
     failed = [c for c in checks if not c.ok]
     return {
         "ok": not any(c.fatal for c in failed) and not failed,

@@ -100,9 +100,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     hm = sub.add_parser("hermes", help="Hermes Agent integration")
     hm_sub = hm.add_subparsers(dest="hermes_cmd", required=True)
-    hi = hm_sub.add_parser("install", help="install the teresis memory provider plugin into a Hermes home")
+    hi = hm_sub.add_parser("install", help="install the Teresis memory provider", parents=[common])
     hi.add_argument("--home", default=None, help="Hermes home (default $HERMES_HOME or ~/.hermes)")
     hi.add_argument("--link", action="store_true", help="symlink this checkout instead of copying (dev)")
+    hi.add_argument("--activate", action="store_true", help="select Teresis for the named Hermes profile")
+    hi.add_argument("--profile", help="Hermes profile for --activate (e.g. default or work)")
+    hi.add_argument("--dry-run", action="store_true", help="preflight --activate without changing Hermes config")
     him = hm_sub.add_parser("import", help="import built-in Hermes MEMORY.md and USER.md into teresis", parents=[common])
     him.add_argument("--home", default=None, help="Hermes home or profile dir (default $HERMES_HOME or ~/.hermes)")
     him.add_argument("--scope", default=None, help="target scope for MEMORY.md (default from config.yaml)")
@@ -120,13 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
     ui.add_argument("--port", type=int, default=7878)
     ui.add_argument("--no-browser", action="store_true")
 
-    st = sub.add_parser("setup", help="wire Claude Code, Cursor, Codex and Hermes to this store")
+    st = sub.add_parser("setup", help="pin supported desktop MCP launchers to this store", parents=[common])
     st.add_argument("--home", default=None, help="home directory to configure (default ~)")
     st.add_argument("--only", default=None, help="comma-separated client ids")
     st.add_argument("--dry-run", action="store_true")
-    st.add_argument("--json", action="store_true", default=False)
 
-    dr = sub.add_parser("doctor", help="check the install end to end", parents=[common])
+    dr = sub.add_parser("doctor", help="probe the DB and check saved launcher configuration", parents=[common])
     dr.add_argument("--home", default=None)
     dr.add_argument("--embed", action="store_true", help="also ping the configured embedder")
 
@@ -170,7 +172,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    p = build_parser()
+    args = p.parse_args(argv)
     if args.cmd == "bench":
         from .bench import main as bench_main
 
@@ -183,6 +186,25 @@ def main(argv: list[str] | None = None) -> int:
 
         home = args.home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
         if args.hermes_cmd == "install":
+            if args.activate:
+                from .hermes_install import activate
+
+                if not args.profile or args.home or args.link:
+                    p.error("hermes install --activate needs --profile, without --home or --link")
+                try:
+                    res = activate(args.profile, args.db, dry_run=args.dry_run)
+                except (OSError, ValueError) as exc:
+                    print(f"Teresis Hermes setup stopped: {exc}", file=sys.stderr)
+                    return 1
+                if args.json:
+                    print(json.dumps(res, indent=2))
+                else:
+                    print(f"{res['status']}: Teresis for Hermes profile {res['profile']} → {res['db']}")
+                    if not args.dry_run:
+                        print("Start a new Hermes session and check `hermes memory status` for that profile.")
+                return 0
+            if args.profile or args.dry_run or args.db:
+                p.error("--profile, --dry-run and --db apply to hermes install --activate")
             dest = install(home, link=args.link)
             print(f"installed teresis provider at {dest}\nactivate: hermes config set memory.provider teresis")
             return 0
@@ -202,14 +224,14 @@ def main(argv: list[str] | None = None) -> int:
 
         from .doctor import setup
 
-        rows = setup(None if not args.home else Path(args.home),
+        rows = setup(None if not args.home else Path(args.home), db=args.db,
                      only=(args.only.split(",") if args.only else None), dry_run=args.dry_run)
         if args.json:
             print(json.dumps(rows, indent=2))
         else:
             for r in rows:
                 print(f"{r['status']:12} {r['name']:14} {r['detail']}")
-        return 0
+        return 1 if any(r["status"] in {"failed", "partial"} for r in rows) else 0
     if args.cmd == "doctor":
         from pathlib import Path
 

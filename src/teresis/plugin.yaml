@@ -1,0 +1,4 @@
+name: teresis
+version: 0.1.0
+description: "Local SQLite memory provider with scoped recall, versioned facts and shared MCP storage."
+requires_hermes: ">=0.23.3"

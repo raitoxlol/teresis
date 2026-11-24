@@ -291,15 +291,27 @@ entities, then pin, edit (new version) or forget it. Writes need
 
 ```bash
 teresis setup --dry-run    # show what would change
-teresis setup              # Claude Code, Cursor, Codex and Hermes -> one memory.db
-teresis doctor             # prove it works end to end
+teresis setup              # pin Claude Code, Cursor and Codex to one absolute DB path
+teresis doctor             # probe the DB and check saved launchers; does not start agents
 ```
 
-`setup` is idempotent and merge-safe: it adds or replaces only the `teresis` MCP entry
-(`mcpServers.teresis` in JSON configs, `[mcp_servers.teresis]` in Codex TOML), leaves every other
-key untouched, and refuses to clobber a config it cannot parse. `doctor` checks Python, SQLite
-FTS5 + trigram, a real write -> recall -> forget round trip, the entity graph, the optional
-embedder (`--embed`), and whether each installed client is actually pointed at this store.
+Use the same `--db /absolute/path/memory.db` with both commands to select a custom store.
+Without it, setup resolves the current DB default once, so a desktop client launched with a
+different environment does not silently open a different file. Setup updates only the Teresis
+server entry. Updating and checking an existing Codex TOML config requires Python 3.11+ or
+optional `tomli` on Python 3.10.
+
+The general `setup` installs Hermes provider files only and reports partial rather than silently
+switching a profile. Use the explicit profile command below to select Teresis and pin the same
+absolute database. Setup exits
+nonzero if any selected client failed or is partial. Use `--only claude-code,cursor,codex` for
+desktop MCP wiring alone.
+
+`doctor` performs a write/recall/forget probe, checks the graph and optional embedder, and verifies
+the saved desktop launcher targets that DB. It does not verify a running desktop session or an
+active Hermes profile; a detected Hermes profile is reported as unverified. For an end-to-end
+check, write a disposable fact in one agent and recall the same ID and scope in another, then
+remove the test fact.
 
 ### Entities and multi-hop recall
 
@@ -338,14 +350,31 @@ what would change.
 
 ### Hermes Agent
 
+Install and select Teresis for one existing Hermes profile:
+
+```bash
+teresis hermes install --activate --profile default --db "$HOME/.local/share/teresis/memory.db"
+hermes --profile default memory status
+```
+
+Use `--profile work` for a named profile, or add `--dry-run` to preview. The command uses the
+Hermes CLI on PATH (tested with Hermes 0.23.3), installs the local plugin, and pins the selected
+profile to the absolute database path. It refuses to replace another external provider, a
+different Teresis DB pin, or a deliberately disabled plugin. Use the same path you gave
+`teresis setup --db` for other agents. Start a new Hermes session after this change. No built-in
+memory files are moved, and Hermes's built-in memory remains active. Keep other Hermes settings
+edits closed while running activation.
+
+For file-only installation or development:
+
 ```bash
 PYTHONPATH=/path/to/teresis/src python3 -m teresis hermes install          # copies to $HERMES_HOME/plugins/teresis
 PYTHONPATH=/path/to/teresis/src python3 -m teresis hermes install --link   # dev: symlink this checkout
-hermes config set memory.provider teresis                                  # then start a new session
 ```
 
-Alternatively, run `pip install` on teresis inside the Hermes venv. It registers the
-`hermes_agent.memory_providers` entry point.
+Select the provider and DB using `hermes --profile <name> memory setup` for a file-only or
+Hermes-managed install. The repository's native plugin manifest and directory entry point
+live in `src/teresis`; it is not listed in the Hermes catalog yet.
 
 What the provider does on each Hermes hook:
 
@@ -372,6 +401,9 @@ Config goes under `plugins.teresis` in `config.yaml`:
 | `auto_extract` | `true` | Rule-based; precision over recall |
 | `prefetch_k` / `prefetch_budget_tokens` | `6` / `700` | Injection size |
 | `prefetch_min_score` | `0.45` | Score floor for automatic prefetch only. Tool `memory_recall` is not filtered. |
+
+Credential-shaped values (including published AWS access-key examples) are redacted before
+the fact is stored. Ordinary placeholders like `API_KEY=your-api-key-here` still pass through.
 
 Lexical prefetch ranks by shared words, then normalizes the best hit to about 1.0. A sushi order can pull in a gym note that only shares "want", or a music note that only shares "like". Prefetch now also requires a distinctive shared term (not a weak verb) and drops anything under `prefetch_min_score`. Explicit tool recall stays permissive so a search can still see the weak hits.
 
