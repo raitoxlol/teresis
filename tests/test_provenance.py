@@ -92,6 +92,17 @@ class TrustGateTests(Base):
         p.sync_turn(text, "ok", session_id="s-1")
         self.assertEqual(len(durable(p._store)), 1)
 
+    def test_hermes_desktop_gui_without_author_is_a_person(self):
+        # The Hermes desktop app reports platform "gui" and sends no turn_author. Live data showed
+        # every one of those turns stored as "User: ..." episodes; treating them as system turns
+        # would silence promotion and block their episodes from prefetch.
+        text = "I prefer short answers from now on."
+        p = self.provider(platform="gui")
+        p.sync_turn(text, "ok", session_id="s-1")
+        self.assertEqual(len(durable(p._store)), 1)
+        eps = [m for m in p._store.export() if m["kind"] == "episode"]
+        self.assertTrue(eps and all(m["meta"]["trust"] == "human" for m in eps))
+
     def test_extra_authors_and_platforms_are_configurable(self):
         text = "I prefer short answers from now on."
         p = self.provider(platform="cli", system_authors="Relay Bot")

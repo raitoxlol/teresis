@@ -48,7 +48,7 @@ DEFAULT_SYSTEM_AUTHORS = (
 DEFAULT_UNTRUSTED_PLATFORMS = ("kanban", "cron", "webhook", "system", "batch", "subagent")
 # Platforms where a message without a turn_author is a person typing into a chat or terminal.
 DEFAULT_INTERACTIVE_PLATFORMS = (
-    "cli", "tui", "desktop", "web", "telegram", "discord", "slack", "imessage", "photon", "bluebubbles",
+    "cli", "tui", "desktop", "gui", "web", "telegram", "discord", "slack", "imessage", "photon", "bluebubbles",
     "signal", "whatsapp", "matrix", "mattermost", "sms", "line", "teams",
 )
 
