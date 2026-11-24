@@ -1,9 +1,12 @@
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 import urllib.request
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from teresis import MemoryStore
@@ -502,6 +505,43 @@ class HermesProviderTests(unittest.TestCase):
         self.assertTrue((dest / "plugin.yaml").exists())
         dest = install(self.d.name, link=True)  # re-install over a copy
         self.assertTrue((dest / "teresis").is_symlink())
+
+
+class EmbedBackfillTests(unittest.TestCase):
+    def test_cli_stops_on_empty_http_batch_without_resending(self):
+        requests = []
+
+        class EmptyBatchEndpoint(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                requests.append(self.rfile.read(int(self.headers["Content-Length"])))
+                self.send_response(200 if len(requests) == 1 else 503)
+                self.end_headers()
+                self.wfile.write(b'{"embeddings": []}')
+
+        with tempfile.TemporaryDirectory() as root, ThreadingHTTPServer(("127.0.0.1", 0), EmptyBatchEndpoint) as server:
+            db = Path(root) / "memory.db"
+            with MemoryStore(db, embedder=None, reranker=None) as store:
+                store.remember("Synthetic backfill memory about a cobalt terminal.")
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                env = {**os.environ, "TERESIS_EMBED": "ollama", "TERESIS_EMBED_MODEL": "synthetic",
+                       "TERESIS_EMBED_URL": f"http://127.0.0.1:{server.server_port}",
+                       "NO_PROXY": "127.0.0.1", "no_proxy": "127.0.0.1"}
+                result = subprocess.run([sys.executable, "-m", "teresis", "embed", "--db", str(db)],
+                                        env=env, capture_output=True, text=True, timeout=6)
+                self.assertEqual(len(requests), 1, result.stderr)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("expected 1, got 0", result.stderr)
+                with MemoryStore(db, embedder=None, reranker=None) as store:
+                    self.assertEqual(store.stats()["vectors"], 0)
+                    self.assertTrue(store.recall("cobalt"))
+            finally:
+                server.shutdown()
+                thread.join()
 
 
 class HttpTests(unittest.TestCase):

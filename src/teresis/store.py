@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS pending_embeddings (
     memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
     owner     TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS pending_embeddings_owner ON pending_embeddings(owner);
+CREATE INDEX IF NOT EXISTS pending_embeddings_owner_memory ON pending_embeddings(owner, memory_id);
+DROP INDEX IF EXISTS pending_embeddings_owner;
 
 CREATE TABLE IF NOT EXISTS entities (
     key        TEXT PRIMARY KEY,
@@ -1027,11 +1028,11 @@ class MemoryStore:
                 self._conn.execute("VACUUM")
         return {"expired": expired, "purged": purged}
 
-    def pending_embeddings(self, owner: str, batch: int = 32) -> list[tuple[str, str]]:
+    def pending_embeddings(self, owner: str, batch: int = 32, *, after: str = "") -> list[tuple[str, str]]:
         rows = self._q(
             "SELECT m.id, m.content FROM pending_embeddings p JOIN memories m ON m.id=p.memory_id "
             "WHERE p.owner=? AND m.deleted_at IS NULL AND (m.expires_at IS NULL OR m.expires_at>?) "
-            "ORDER BY p.rowid LIMIT ?", [owner, self.clock(), batch],
+            "AND p.memory_id>? ORDER BY p.memory_id LIMIT ?", [owner, self.clock(), after, batch],
         )
         return [(r["id"], r["content"]) for r in rows]
 
@@ -1060,11 +1061,11 @@ class MemoryStore:
             )
             if not rows:
                 return done
-            vecs = self.embedder.embed([r["content"] for r in rows])
+            vecs = _embed.pack_batch(self.embedder.embed([r["content"] for r in rows]), len(rows))
             with self._write() as c:
                 c.executemany(
                     "INSERT OR REPLACE INTO vectors(memory_id, model, vec) VALUES (?,?,?)",
-                    [(r["id"], self.embedder.name, _embed.pack(v)) for r, v in zip(rows, vecs)],
+                    [(r["id"], self.embedder.name, v) for r, v in zip(rows, vecs)],
                 )
             done += len(rows)
 

@@ -26,6 +26,25 @@ def _writer(path, n, tag):
 
 
 class StoreTests(unittest.TestCase):
+    def test_backfill_keeps_completed_batches_and_retries_short_batch(self):
+        class Embedder:
+            name = "synthetic"
+            batches = iter(([[1, 0], [1, 0]], [[1, 0]]))
+
+            def embed(self, texts):
+                return next(self.batches)
+
+        with MemoryStore(":memory:", embedder=None, reranker=None) as store:
+            for index in range(4):
+                store.remember(f"Fixture number {index}", key=f"fixture-{index}")
+            store.embedder = Embedder()
+            with self.assertRaisesRegex(ValueError, "expected 2, got 1"):
+                store.embed_missing(batch=2)
+            self.assertEqual(store.stats()["vectors"], 2)
+            store.embedder.batches = iter(([[1, 0], [1, 0]],))
+            self.assertEqual(store.embed_missing(batch=2), 2)
+            self.assertEqual(store.stats()["vectors"], 4)
+
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.path = Path(self.dir.name) / "m.db"

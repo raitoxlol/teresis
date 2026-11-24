@@ -25,6 +25,7 @@ import threading
 from contextvars import copy_context
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
 from . import embed as _embed
@@ -128,22 +129,49 @@ class _CaptureIndexer:
         while True:
             self.wake.wait()
             self.wake.clear()
+            after = ""
             try:
                 while not self.stopped.is_set():
-                    rows = store.pending_embeddings(self.owner)
+                    rows = store.pending_embeddings(self.owner, after=after)
                     if not rows:
                         break
-                    vectors = embedder.embed([content for _, content in rows])
-                    if len(vectors) != len(rows) or not all(vectors):
-                        raise ValueError("embedding response does not match capture batch")
-                    if not self.stopped.is_set():
-                        store.complete_embeddings(self.owner, embedder.name,
-                                                  [(mid, _embed.pack(vec)) for (mid, _), vec in zip(rows, vectors)])
+                    if not self._index_batch(store, embedder, rows):
+                        # A wholly rejected batch may indicate a misconfigured service.
+                        break
+                    after = rows[-1][0]
             except Exception:
                 if not self.stopped.is_set():
                     log.warning("teresis capture indexing failed; will retry on capture or restart")
             if self.stopped.is_set():
                 return
+
+    def _index_batch(self, store: MemoryStore, embedder: _embed.Embedder,
+                     rows: list[tuple[str, str]]) -> bool:
+        if self.stopped.is_set():
+            return False
+        try:
+            vectors = _embed.pack_batch(embedder.embed([content for _, content in rows]), len(rows))
+        except HTTPError as exc:
+            exc.close()
+            if exc.code not in (400, 413, 422):
+                raise
+        except _embed.InvalidEmbeddingBatch as exc:
+            if not exc.has_vectors and len(rows) > 1:
+                raise
+        else:
+            if not self.stopped.is_set():
+                store.complete_embeddings(self.owner, embedder.name,
+                                          [(mid, vec) for (mid, _), vec in zip(rows, vectors)])
+            return True
+
+        # Isolate input rejections. Transport and service failures stop the pass.
+        if len(rows) == 1:
+            log.warning("teresis capture embedding rejected; will retry on capture or restart")
+            return False
+        middle = len(rows) // 2
+        indexed_left = self._index_batch(store, embedder, rows[:middle])
+        indexed_right = self._index_batch(store, embedder, rows[middle:])
+        return indexed_left or indexed_right
 
 
 def _profile_embedder(config: Dict[str, Any], hermes_home: str) -> _embed.Embedder | None:

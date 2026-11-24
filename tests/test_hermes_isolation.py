@@ -186,6 +186,56 @@ class HermesIsolationTests(unittest.TestCase):
         self.assertTrue(any("lilac" in text for text in calls["birch"]))
         self.assertFalse(any("juniper" in text or "cobalt" in text for text in calls["birch"]))
 
+    def test_rejected_capture_does_not_block_later_vectors(self):
+        settings = {"embed": "openai", "embed_model": "synthetic",
+                    "embed_url": "https://atlas.invalid/v1", "auto_extract": False}
+        provider = self.provider("atlas", **settings)
+        indexer = provider._capture_indexer
+        indexer.stop()
+        indexer.thread.join(5)
+        provider.sync_turn("The synthetic rejected row uses a cobalt marker.", "Understood.")
+        provider.sync_turn("The healthy juniper archive is on the shelf.", "Understood.")
+        provider.shutdown()
+        accepted = self.egress.side_effect
+
+        failed = Event()
+        with patch("teresis.hermes.log.warning", side_effect=lambda *_: failed.set()):
+            self.egress.side_effect = urllib.error.HTTPError("https://atlas.invalid/v1", 503, "unavailable", None, None)
+            unavailable = self.provider("atlas", **settings)
+            self.assertTrue(failed.wait(3))
+            unavailable_indexer = unavailable._capture_indexer
+            unavailable.shutdown()
+            unavailable_indexer.thread.join(5)
+        self.egress.assert_called_once()
+        self.assertEqual(len(self.egress.call_args.args[1]["input"]), 2)
+        self.egress.reset_mock()
+
+        def post(url, body, headers, **kwargs):
+            if any("cobalt" in item for item in body["input"]):
+                raise urllib.error.HTTPError(url, 422, "input rejected", None, None)
+            return accepted(url, body, headers, **kwargs)
+
+        self.egress.side_effect = post
+        restarted = self.provider("atlas", **settings)
+        deadline = time.monotonic() + 3
+        while restarted._store.stats()["vectors"] != 1:
+            self.assertLess(time.monotonic(), deadline, "healthy capture never received a vector")
+            time.sleep(0.01)
+        self.assertTrue(restarted._store.recall("cobalt", lexical_only=True))
+        self.assertEqual(len(restarted._store.pending_embeddings(indexer.owner)), 1)
+        for call in self.egress.call_args_list:
+            self.assertEqual(call.args[0], "https://atlas.invalid/v1/embeddings")
+            self.assertEqual(call.args[2]["Authorization"], "Bearer fixture-atlas-key")
+        restarted.shutdown()
+
+        self.egress.side_effect = accepted
+        recovered = self.provider("atlas", **settings)
+        deadline = time.monotonic() + 3
+        while recovered._store.stats()["vectors"] != 2:
+            self.assertLess(time.monotonic(), deadline, "rejected capture never retried")
+            time.sleep(0.01)
+        self.assertEqual(recovered._store.pending_embeddings(indexer.owner), [])
+
 
 class HermesEmbeddingTransportTests(unittest.TestCase):
     def test_redirects_are_never_followed(self):
