@@ -296,13 +296,16 @@ class HermesProviderTests(unittest.TestCase):
 
     def test_embedder_settings_come_from_config(self):
         import os
-        for v in ("TERESIS_EMBED", "TERESIS_EMBED_MODEL"):
-            os.environ.pop(v, None)
-        self.addCleanup(lambda: [os.environ.pop(v, None) for v in ("TERESIS_EMBED", "TERESIS_EMBED_MODEL", "TERESIS_EMBED_URL")])
+        from unittest.mock import patch
+
+        env = patch.dict(os.environ, {"TERESIS_EMBED": "none", "TERESIS_EMBED_MODEL": "other"})
+        env.start()
+        self.addCleanup(env.stop)
         p = TeresisMemoryProvider(config={"db_path": self.db, "embed": "ollama", "embed_model": "all-minilm"})
         self.addCleanup(p.shutdown)
         p.initialize("s", hermes_home=self.d.name, platform="cli", agent_identity="max")
         self.assertIsNotNone(p._store.embedder)
+        self.assertEqual(os.environ["TERESIS_EMBED"], "none")
 
     def test_full_lifecycle(self):
         p = self.provider()

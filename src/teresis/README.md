@@ -17,16 +17,31 @@ Check the database path and start a new session. Use a separate database for pro
 that should not share memory. Scopes organize retrieval within a file; they are not
 authorization boundaries.
 
-Teresis automatically saves dialogue as searchable episodes with a 30-day default
-TTL, and can extract durable preferences and decisions. You can disable turn capture
-and extraction in that profile's provider settings. Existing Hermes memory files
-are not imported by setup. Credential-pattern redaction is best effort, not a
-guarantee that all sensitive text will be removed.
+## Data, network and processes
 
-By default the provider does not make network or model calls. Explicitly configuring
-an embeddings endpoint sends input and search text to that endpoint; use a trusted
-local endpoint if the text must stay on-device. Optional reranking can download a
-model and runs inference locally. No credentials are required by the plugin manifest.
+- Teresis reads the Hermes profile settings via Hermes and opens the selected
+  SQLite file (including WAL sidecars). It can mirror native memory-tool writes,
+  capture dialogue as searchable episodes with a 30-day default TTL, and extract
+  durable preferences and decisions. Turn capture and extraction are configurable.
+  Setup never imports existing Hermes memory files. The separately invoked
+  `teresis hermes import` CLI command reads the profile's `MEMORY.md` and `USER.md`.
+  Credential-pattern redaction is best effort, not a privacy guarantee.
+- Lexical mode, the default, makes no provider network or model calls and requires
+  no credentials. The provider does not emit telemetry. Explicit Ollama or
+  OpenAI-compatible embeddings send text and queries to the selected profile's
+  configured endpoint. Use a trusted endpoint; local endpoints keep this traffic
+  on-device. Hermes reads optional `TERESIS_EMBED_KEY` through its active profile
+  secret API for OpenAI-compatible embeddings. `embed_auth: none` sends no bearer.
+  A bearer requires HTTPS or loopback HTTP; redirects are refused. The key is not
+  saved by Teresis. Optional fastembed reranking may download model artifacts and
+  runs inference locally. These settings are per-profile; standalone environment
+  switches do not enable remote embedding or reranking inside Hermes.
+- Activating the native plugin starts no background service or self-updater.
+  Separate standalone commands can invoke the Hermes CLI to configure a profile,
+  run SSH to transfer an encrypted sync bundle, or start a foreground HTTP API
+  or inspector. Both listeners default to loopback; the optional UI token protects
+  writes, not reads. The inspector may open the browser. Those commands do not run
+  during Hermes activation.
 
 See the [Teresis repository](https://github.com/raitoxlol/teresis) for store behavior,
 settings and the shared MCP setup.
