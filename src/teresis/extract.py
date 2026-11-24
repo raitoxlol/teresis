@@ -129,11 +129,24 @@ _INJECTION_BULLET = re.compile(
 EXTRACT_SOURCES = ("hermes:auto-extract", "hermes:pre-compress")
 
 
+# A human stating a rule with one of these markers is explicitly asking for it to
+# stick. Everything else the extractor finds is only a candidate.
+_STRONG_MARKER = re.compile(
+    r"\bI\s+(?:really\s+)?prefer\b|\bfrom now on\b|\balways\b|\bnever\b(?!\s+mind)", re.I)
+_REMEMBER = re.compile(r"\bremember\b", re.I)
+
+
+def has_strong_marker(sentence: str, clause: str = "") -> bool:
+    """True when the user explicitly asked for this to stick (remember / always / from now on / I prefer)."""
+    return bool(_STRONG_MARKER.search(clause or sentence) or _REMEMBER.search(sentence))
+
+
 @dataclass(frozen=True)
 class Candidate:
     content: str
     kind: str
     importance: float
+    explicit: bool = False
 
 
 def _strip_speaker(text: str) -> str:
@@ -197,8 +210,9 @@ def extract(text: str, *, max_len: int = 300) -> list[Candidate]:
     out: list[Candidate] = []
     seen: set[str] = set()
     authored = user_authored_text(text)
-    clauses = [c for sent in _SENT.split(authored) for c in _CLAUSE.split(_LEAD.sub("", sent.strip()))]
-    for raw in clauses:
+    clauses = [(whole, c) for whole in _SENT.split(authored)
+               for c in _CLAUSE.split(_LEAD.sub("", whole.strip()))]
+    for whole, raw in clauses:
         sent = _prepare_clause(raw)
         if len(sent) < 12 or len(sent) > max_len or _SKIP.search(sent) or "```" in sent:
             continue
@@ -213,7 +227,7 @@ def extract(text: str, *, max_len: int = 300) -> list[Candidate]:
                 key = sent.casefold()
                 if key not in seen:
                     seen.add(key)
-                    out.append(Candidate(sent, kind, importance))
+                    out.append(Candidate(sent, kind, importance, has_strong_marker(whole, raw)))
                 break
     return out
 
@@ -225,7 +239,7 @@ def extraction_problem(content: str, *, kind: str = "", source: str = "") -> str
     and explicit tool writes are left alone. This is not called on the write
     path; ``teresis scrub`` is opt-in and dry-run unless ``--apply``.
     """
-    if source not in EXTRACT_SOURCES:
+    if source not in EXTRACT_SOURCES or kind == "episode":
         return None
     text = content or ""
     if _SYSTEM_SENTENCE.search(text) or any(m.lower() in text.lower() for m in _BLOCK_MARKERS):

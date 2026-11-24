@@ -29,6 +29,8 @@ from urllib.parse import urlsplit
 
 from . import embed as _embed
 from . import extract as _extract
+from . import provenance as _prov
+from . import review as _review
 from . import secrets as _secrets
 from .mcp import TOOLS, Server
 from .store import MemoryStore, default_db_path
@@ -68,6 +70,15 @@ DEFAULTS: Dict[str, Any] = {
     "capture_turns": True,
     "episode_ttl_days": 30,
     "auto_extract": True,
+    # Trust gate. Extraction needs a turn that is provably typed by a person.
+    "system_authors": "",          # extra comma-separated author names/ids treated as non-human
+    "untrusted_platforms": "",     # extra platforms whose user-role turns are never human
+    "interactive_platforms": "",   # extra platforms where a turn without turn_author is a person
+    # Compaction summaries are model-written. Never extract from them unless explicitly opted in,
+    # and even then only into the candidate quarantine.
+    "extract_on_pre_compress": False,
+    "pre_compress_checkpoint": True,   # metadata-only episode, never a preference/decision/procedure row
+    "candidate_ttl_days": 14,
     "embed_timeout": 120,
     "embed_auth": "profile",
     "rerank": "",            # "fastembed" enables the local ONNX cross-encoder; empty/none = off
@@ -240,6 +251,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._read_scopes: List[str] = [self._scope]
         self._write_enabled = True
         self._session_id = ""
+        self._platform = ""
         self._last_count: Optional[int] = None
 
     # -- identity ----------------------------------------------------------
@@ -338,14 +350,16 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             budget = int(self._config.get("prefetch_budget_tokens", 700))
             query = _secrets.redact_secrets(query)[0]  # keep raw secrets out of remote embedder calls
             facts = self._store.recall(query, scope=self._read_scopes, k=k, budget_tokens=budget,
-                                       exclude_kinds=["episode"])
+                                       exclude_kinds=["episode", _prov.CANDIDATE_KIND])
             floor = _min_score(self._config)
-            facts = [m for m in facts if _prefetch_relevant(query, m.content, floor=floor, score=m.score)]
+            facts = [m for m in facts if _prefetch_relevant(query, m.content, floor=floor, score=m.score)
+                     and _prov.injectable(m.kind, m.content, m.meta, m.source)[0]]
             blocks = [self._format(facts, "Long-term memory (teresis)")] if facts else []
             if _truthy(self._config.get("capture_turns", True)):
                 eps = self._store.recall(query, scope=[self._scope], inherit=False, kinds=["episode"], k=2)
                 known = [" ".join(m.content.casefold().split()) for m in facts]
-                eps = [m for m in eps if _prefetch_relevant(query, m.content, floor=max(0.3, floor), score=m.score)
+                eps = [m for m in eps if _prov.injectable(m.kind, m.content, m.meta, m.source)[0]
+                       and _prefetch_relevant(query, m.content, floor=max(0.3, floor), score=m.score)
                        and not any(k and k.removeprefix("user: ") in " ".join(m.content.casefold().split()) for k in known)]
                 if eps:
                     blocks.append(self._format(eps, "Related past conversation"))
@@ -376,7 +390,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         if len(mine) < 3:
             return None
         try:
-            cands = self._store.recall(content, scope=self._read_scopes, k=5, exclude_kinds=["episode"],
+            cands = self._store.recall(content, scope=self._read_scopes, k=5,
+                                       exclude_kinds=["episode", _prov.CANDIDATE_KIND],
                                        lexical_only=lexical_only)
         except Exception:
             return None
@@ -407,7 +422,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         indexer = self._capture_indexer if automatic else None
         owner = indexer.owner if indexer else None
         if hit:
-            self._store.update(hit[1].id, content, embedding_owner=owner)
+            extra = {"meta": kw["meta"]} if kw.get("meta") else {}
+            self._store.update(hit[1].id, content, embedding_owner=owner, **extra)
         else:
             self._store.remember(content, embedding_owner=owner, **kw)
         if indexer:
@@ -422,21 +438,91 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         if indexer:
             indexer.wake.set()
 
-    def _save_extracted(self, text: str, source: str) -> List[str]:
+    def _turn_is_human(self, turn_author: Optional[Dict[str, Any]], text: str,
+                       turn_origin: Optional[str] = None) -> tuple[bool, str]:
+        """Allowlist gate: True only when the turn is provably typed by a person."""
+        if turn_origin:  # explicit label from the host (not sent by Hermes yet) beats guessing
+            human, reason = str(turn_origin).strip().lower() == "human", f"origin:{turn_origin}"
+        else:
+            human, reason = _prov.turn_trust(
+                turn_author, self._platform,
+                system_authors=self._config.get("system_authors"),
+                untrusted_platforms=self._config.get("untrusted_platforms"),
+                interactive_platforms=self._config.get("interactive_platforms"),
+            )
+        if human and (_prov.wrapper_shaped(text) or _prov.structural_injected(text)):
+            return False, "wrapper-shaped"
+        return human, reason
+
+    def _remember_auto(self, content: str, **kw) -> None:
+        indexer = self._capture_indexer
+        self._store.remember(content, embedding_owner=indexer.owner if indexer else None, **kw)
+        if indexer:
+            indexer.wake.set()
+
+    def _store_explicit(self, c: "_extract.Candidate", scope: str, source: str) -> bool:
+        """A person said it with a strong marker: store (or promote) it as a standing memory."""
+        sid = self._session_id
+        meta = {"session_id": sid, "origin": _prov.USER_TYPED, "trust": "human",
+                "promoted_by": "explicit-marker"}
+        cand = _review.find_candidate(self._store, c.content, scope)
+        if cand is not None:
+            self._store.update(cand.id, meta={"origin": _prov.USER_TYPED, "trust": "human"})
+            _review.promote(self._store, cand.id, by="explicit-marker")
+            return True
+        return self._write_or_skip(c.content, automatic=True, scope=scope, kind=c.kind,
+                                   importance=c.importance, source=source, meta=meta)
+
+    def _store_candidate(self, c: "_extract.Candidate", scope: str, source: str, *, human: bool) -> bool:
+        """Quarantine: stored as kind ``candidate``, never injected, expires unless promoted."""
+        now = self._store.clock()
+        sid = self._session_id
+        hit = self._near_dup(c.content, lexical_only=True)
+        if hit and hit[0] == "dup":
+            return False  # a trusted row already says this
+        existing = _review.find_candidate(self._store, c.content, scope)
+        if existing is not None:
+            if not human:
+                return False
+            meta = _review.add_sighting(existing.meta, sid, now)
+            self._store.update(existing.id, meta=meta)
+            if _review.corroborated(meta):
+                _review.promote(self._store, existing.id, by="corroboration")
+            return True
+        meta = {
+            "session_id": sid, "origin": _prov.AUTO_CANDIDATE, "trust": "untrusted",
+            "candidate_kind": c.kind, "candidate_importance": c.importance,
+            "seen": [{"s": sid or "unknown", "d": _review.day_of(now)}] if human else [],
+        }
+        if hit:  # same statement, different number: promotion revises the old row
+            meta["supersedes"] = hit[1].id
+        ttl = float(self._config.get("candidate_ttl_days", _prov.DEFAULT_CANDIDATE_TTL_DAYS)) or None
+        self._remember_auto(c.content, scope=scope, kind=_prov.CANDIDATE_KIND,
+                            importance=_prov.CANDIDATE_IMPORTANCE, tags=["candidate"], ttl_days=ttl,
+                            source=source, meta=meta)
+        return True
+
+    def _save_extracted(self, text: str, source: str, *, human: bool = False) -> List[str]:
+        """Extract claims. Explicitly marked human statements are stored; everything else is quarantined.
+
+        ``human`` must come from the trust gate. Without it nothing is promoted by marker and
+        nothing counts toward corroboration.
+        """
         saved = []
         for c in _extract.extract(text):
             scope = "user" if c.kind == "preference" else self._scope
-            content = c.content
             try:
-                if self._write_or_skip(content, automatic=True, scope=scope, kind=c.kind, importance=c.importance,
-                                       source=source, meta={"session_id": self._session_id}):
-                    saved.append(content)
+                ok = (self._store_explicit(c, scope, source) if (human and c.explicit)
+                      else self._store_candidate(c, scope, source, human=human))
+                if ok:
+                    saved.append(c.content)
             except Exception as exc:
                 log.debug("teresis extract save failed: %s", exc)
         return saved
 
     def sync_turn(self, user_content: str, assistant_content: str, *, session_id: str = "",
-                  messages: Optional[List[Dict[str, Any]]] = None, turn_author: Optional[Dict[str, Any]] = None) -> None:
+                  messages: Optional[List[Dict[str, Any]]] = None, turn_author: Optional[Dict[str, Any]] = None,
+                  turn_origin: Optional[str] = None) -> None:
         if not (self._store and self._write_enabled):
             return
         user_content = user_content if isinstance(user_content, str) else str(user_content or "")
@@ -446,6 +532,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         authored = _extract.user_authored_text(user_content)
         if not authored.strip():
             return
+        human, reason = self._turn_is_human(turn_author, authored, turn_origin)
         try:
             if _truthy(self._config.get("capture_turns", True)) and not _is_trivial(authored):
                 who = (turn_author or {}).get("name") or "User"
@@ -454,10 +541,14 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
                     importance=0.2,
                     ttl_days=float(self._config.get("episode_ttl_days", 30)) or None,
                     source=f"hermes:{self._platform or 'turn'}",
-                    meta={"session_id": session_id or self._session_id},
+                    meta={"session_id": session_id or self._session_id,
+                          "origin": _prov.USER_TYPED if human else _prov.SYSTEM_TURN,
+                          "trust": "human" if human else "system", "trust_reason": reason},
                 )
-            if _truthy(self._config.get("auto_extract", True)):
-                self._save_extracted(authored, "hermes:auto-extract")
+            if human and _truthy(self._config.get("auto_extract", True)):
+                if session_id:
+                    self._session_id = session_id
+                self._save_extracted(authored, "hermes:auto-extract", human=True)
         except Exception as exc:
             log.debug("teresis sync_turn failed: %s", exc)
 
@@ -475,13 +566,15 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             content = _secrets.redact_secrets(content)[0]
         try:
             if action == "add" and content:
-                self._write_or_skip(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool")
+                self._write_or_skip(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool",
+                                    meta={"origin": _prov.ASSISTANT_TOOL, "trust": "assistant"})
             elif action == "replace" and content:
                 old = self._store.find(prev, scope=scope) if prev else None
                 if old:
                     self._store.update(old.id, content)
                 else:
-                    self._store.remember(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool")
+                    self._store.remember(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool",
+                                         meta={"origin": _prov.ASSISTANT_TOOL, "trust": "assistant"})
             elif action == "remove":
                 old = self._store.find(prev or content, scope=scope) if (prev or content) else None
                 if old:
@@ -490,21 +583,38 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             log.debug("teresis on_memory_write failed: %s", exc)
 
     def on_pre_compress(self, messages: List[Dict[str, Any]]) -> str:
-        if not (self._store and self._write_enabled and _truthy(self._config.get("auto_extract", True))):
+        """Compaction hook. Never writes preference/decision/procedure/fact rows by default.
+
+        The message list holds model-written compaction summaries, system prompts, assistant and
+        tool messages, and notices, none of which are user-authored. A metadata-only episode is
+        checkpointed. With ``extract_on_pre_compress: true`` user-role text goes through the
+        candidate quarantine only (unverified, never promoted by marker or corroboration).
+        """
+        if not (self._store and self._write_enabled):
             return ""
-        saved: List[str] = []
-        for msg in messages or []:
-            if msg.get("role") != "user":
-                continue
-            content = msg.get("content")
-            if not isinstance(content, str):
-                continue
-            authored = _extract.user_authored_text(content)
-            if authored:
-                saved += self._save_extracted(authored, "hermes:pre-compress")
-        if not saved:
-            return ""
-        return "Saved to long-term memory before compression:\n" + "\n".join(f"- {s}" for s in saved[:20])
+        msgs = [m for m in (messages or []) if isinstance(m, dict)]
+        try:
+            if _truthy(self._config.get("pre_compress_checkpoint", True)) and msgs:
+                users = sum(1 for m in msgs if m.get("role") == "user")
+                self._remember_episode(
+                    f"Context compaction checkpoint: {len(msgs)} messages ({users} user-role) in session "
+                    f"{self._session_id or 'unknown'}",
+                    importance=0.1, ttl_days=float(self._config.get("episode_ttl_days", 30)) or None,
+                    source="hermes:pre-compress",
+                    meta={"session_id": self._session_id, "origin": _prov.SYSTEM_TURN, "trust": "system"},
+                )
+            if _truthy(self._config.get("extract_on_pre_compress", False)) and _truthy(
+                    self._config.get("auto_extract", True)):
+                for msg in msgs:
+                    content = msg.get("content")
+                    if msg.get("role") != "user" or not isinstance(content, str):
+                        continue
+                    authored = _extract.user_authored_text(_secrets.redact_secrets(content)[0])
+                    if authored and not _prov.wrapper_shaped(authored) and not _prov.structural_injected(authored):
+                        self._save_extracted(authored, "hermes:pre-compress", human=False)
+        except Exception as exc:
+            log.debug("teresis pre-compress failed: %s", exc)
+        return ""
 
     def on_delegation(self, task: str, result: str, *, child_session_id: str = "", **kwargs) -> None:
         if not (self._store and self._write_enabled and task):
@@ -554,8 +664,20 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             {"key": "rerank_model", "description": "Reranker model name.", "default": "Xenova/ms-marco-MiniLM-L-6-v2"},
             {"key": "capture_turns", "description": "Store each turn as a short-lived episode.", "type": "boolean",
              "default": True},
-            {"key": "auto_extract", "description": "Save stated preferences/decisions automatically.",
+            {"key": "auto_extract", "description": "Save stated preferences/decisions automatically. Claims stored from a "
+             "human turn without a strong marker are quarantined as candidates.",
              "type": "boolean", "default": True},
+            {"key": "extract_on_pre_compress", "description": "Extract from messages about to be compressed. Off by "
+             "default: compaction summaries are model-written. When on, results are candidates only.",
+             "type": "boolean", "default": False},
+            {"key": "candidate_ttl_days", "description": "Days an unpromoted candidate lives before it expires.",
+             "type": "integer", "default": 14, "minimum": 1},
+            {"key": "system_authors", "description": "Extra comma-separated turn_author names or ids that are never human.",
+             "default": ""},
+            {"key": "untrusted_platforms", "description": "Extra comma-separated platforms whose turns are never human.",
+             "default": ""},
+            {"key": "interactive_platforms", "description": "Extra comma-separated platforms where a turn without a "
+             "turn_author is a person.", "default": ""},
             {"key": "episode_ttl_days", "description": "Days to keep episodes (0 = forever).", "type": "integer",
              "default": 30, "minimum": 0},
             {"key": "prefetch_k", "description": "Max memories injected per turn.", "type": "integer", "default": 6,
@@ -696,7 +818,7 @@ def import_memories(
     with MemoryStore(target_db, embedder=None, reranker=None) as store:
         for entry in mem_entries:
             res = store.remember(entry, scope=target_scope, kind="fact", importance=0.7,
-                                 source="hermes:import:MEMORY.md")
+                                 source="hermes:import:MEMORY.md", meta={"origin": "import", "trust": "import"})
             if res.status == "created":
                 stats["created"] += 1
             else:
@@ -705,7 +827,7 @@ def import_memories(
                 stats["redacted"] += 1
         for entry in user_entries:
             res = store.remember(entry, scope=user_scope, kind="preference", importance=0.7,
-                                 source="hermes:import:USER.md")
+                                 source="hermes:import:USER.md", meta={"origin": "import", "trust": "import"})
             if res.status == "created":
                 stats["created"] += 1
             else:

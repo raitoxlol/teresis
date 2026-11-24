@@ -140,6 +140,8 @@ def _fmt(mems) -> str:
     lines = []
     for m in mems:
         bits = [m.kind, m.scope]
+        if m.kind == "candidate":
+            bits = [f"candidate:{m.meta.get('candidate_kind', '?')}, unreviewed, not injected", m.scope]
         if m.key:
             bits.append(f"key={m.key}")
         if m.superseded_by:
@@ -168,6 +170,7 @@ class Server:
                 a["content"], scope=self._scope(a), kind=a.get("kind", "fact"), key=a.get("key"),
                 tags=a.get("tags") or (), importance=a.get("importance", 0.5), pinned=bool(a.get("pinned")),
                 ttl_days=a.get("ttl_days"), source=a.get("source"),
+                meta={"origin": "assistant-tool", "trust": "assistant"},
             )
             msg = f"{r.status}: {r.id}" + (f" (replaced {', '.join(r.replaced)})" if r.replaced else "")
             return msg, r.to_dict()

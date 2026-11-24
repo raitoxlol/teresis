@@ -261,6 +261,26 @@ def _check_db(db: Path) -> Check:
     return Check("db-file", writable, f"{db} ({size / 1024:.0f} KB, {'writable' if writable else 'read-only'})")
 
 
+def _check_provenance(db: Path) -> tuple[Check, dict[str, Any]]:
+    """Counts by origin/kind, the candidate queue, and rows whose origin is not trusted."""
+    from . import review
+
+    try:
+        store = MemoryStore(db, embedder=None)
+        try:
+            rep = review.report(store)
+        finally:
+            store.close()
+    except Exception as exc:
+        return Check("provenance", False, str(exc)), {}
+    origins = ", ".join(f"{k} {v}" for k, v in sorted(rep["by_origin"].items())) or "no rows"
+    detail = f"{rep['active']} active ({origins}); {rep['candidates']} candidate(s) waiting for review"
+    bad = len(rep["untrusted"])
+    if bad:
+        detail += f"; {bad} row(s) with an untrusted origin: run `teresis review` or `teresis scrub`"
+    return Check("provenance", bad == 0, detail), rep
+
+
 def _check_embedder() -> Check:
     from . import embed as _embed
 
@@ -315,9 +335,12 @@ def run_doctor(db: str | os.PathLike | None = None, *, home: Path | None = None,
         checks.append(Check("graph", True, f"{stats.get('entities', 0)} entities, {stats.get('links', 0)} links"))
     except Exception as exc:
         checks.append(Check("graph", False, str(exc)))
+    prov_check, prov = _check_provenance(path)
+    checks.append(prov_check)
     checks.extend(_check_client(c, path) for c in clients(home))
     failed = [c for c in checks if not c.ok]
     return {
+        "provenance": prov,
         "ok": not any(c.fatal for c in failed) and not failed,
         "version": __version__,
         "db": str(path),

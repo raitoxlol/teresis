@@ -278,16 +278,22 @@ class HermesProviderTests(unittest.TestCase):
         hits = [m for m in p._store.recall("staging database port", scope=p._read_scopes, k=10,
                                            exclude_kinds=["episode"])]
         self.assertEqual(len(hits), 1)
-        # a changed port supersedes the old value in place; history keeps it
+        # a changed port without a strong marker is only a candidate; the trusted row is untouched
         p.sync_turn("my staging database is called quokka-staging on port 6000.", "ok")
         hits = p._store.recall("staging database port", scope=p._read_scopes, k=10, exclude_kinds=["episode"])
+        self.assertEqual(sorted(m.kind for m in hits), ["candidate", "fact"])
+        self.assertIn("5433", [m for m in hits if m.kind == "fact"][0].content)
+        # an explicit restatement supersedes the old value in place; history keeps it
+        p.sync_turn("Remember: my staging database is called quokka-staging on port 6000.", "ok")
+        hits = [m for m in p._store.recall("staging database port", scope=p._read_scopes, k=10,
+                                           exclude_kinds=["episode", "candidate"])]
         self.assertEqual(len(hits), 1)
         self.assertIn("6000", hits[0].content)
         self.assertNotIn("5433", hits[0].content)
-        # a different service on the same port is a separate fact
+        # a different service on the same port is a separate fact (candidate until promoted)
         p.sync_turn("my prod database is called quokka-prod on port 6000.", "ok")
-        hits = p._store.recall("database port", scope=p._read_scopes, k=10, exclude_kinds=["episode"])
-        self.assertEqual(len(hits), 2)
+        hits = p._store.recall("quokka-prod database port", scope=p._read_scopes, k=10, exclude_kinds=["episode"])
+        self.assertTrue(any("quokka-prod" in m.content and m.kind == "candidate" for m in hits))
         # flipped polarity is kept too
         p.sync_turn("we never ship on Fridays.", "ok")
         p.sync_turn("we always ship on Fridays.", "ok")
@@ -332,8 +338,9 @@ class HermesProviderTests(unittest.TestCase):
 
         p.on_memory_write("remove", "user", "User lives in Osaka", {"previous_content": "User lives in Osaka"})
         self.assertNotIn("Osaka", p.prefetch("where does the user live"))
-        self.assertIn("Saved to long-term memory",
-                      p.on_pre_compress([{"role": "user", "content": "We decided to ship on Thursdays."}]))
+        self.assertEqual(p.on_pre_compress([{"role": "user", "content": "We decided to ship on Thursdays."}]), "")
+        self.assertFalse([m for m in p._store.recall("ship Thursdays", scope=p._read_scopes, k=10,
+                                                     exclude_kinds=["episode"]) if "Thursdays" in m.content])
         p.on_delegation("audit deps", "2 outdated packages", child_session_id="c1")
         p.shutdown()
 
@@ -433,7 +440,10 @@ class HermesProviderTests(unittest.TestCase):
         self.assertNotIn("in-flight", blob.lower())
         self.assertNotIn("User:", blob)
         self.assertIn("dark roast", blob)
-        self.assertIn("spaces over tabs", blob)
+        # compaction messages are never user-authored: nothing durable comes out of them
+        self.assertNotIn("spaces over tabs", blob)
+        self.assertEqual(p.on_pre_compress([{"role": "user", "content": "I prefer spaces over tabs."}]), "")
+        self.assertNotIn("spaces over tabs", json.dumps([m for m in store.export() if m["kind"] != "episode"]))
         episodes = [m for m in rows if m["kind"] == "episode"]
         self.assertTrue(episodes)
         self.assertNotIn("memory-context", json.dumps(episodes))
