@@ -2,16 +2,19 @@ import json
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 import urllib.error
 import urllib.request
 from contextvars import ContextVar
 from pathlib import Path
+from threading import Event, Thread
 from unittest.mock import patch
 
 from teresis import embed
 from teresis.hermes import TeresisMemoryProvider
+from teresis.store import MemoryStore
 
 
 class HermesIsolationTests(unittest.TestCase):
@@ -126,6 +129,62 @@ class HermesIsolationTests(unittest.TestCase):
         self.assertIn("[REDACTED:openai_key]", body["input"][0])
         self.assertNotIn(credential, str(body))
         self.assertEqual(self.egress.call_args.args[0], "http://localhost:11434/api/embed")
+
+    def test_pending_capture_is_local_and_retries_only_in_its_owning_profile(self):
+        shared = self.Homes["atlas"].parent / "shared.db"
+        settings = {"embed": "openai", "embed_model": "synthetic", "db_path": str(shared)}
+        atlas = self.provider("atlas", embed_url="https://atlas.invalid/v1", **settings)
+        started, release, captured = Event(), Event(), Event()
+        original_post = self.egress.side_effect
+
+        def stalled_post(*args, **kwargs):
+            started.set()
+            release.wait(5)
+            return original_post(*args, **kwargs)
+
+        self.egress.side_effect = stalled_post
+
+        def capture():
+            atlas.sync_turn("For future reference, I prefer using the cobalt terminal.", "Got it.")
+            atlas.sync_turn("We always label backups with juniper.", "Got it.")
+            captured.set()
+
+        thread = Thread(target=capture, daemon=True)
+        indexer = getattr(atlas, "_capture_indexer", None)
+        thread.start()
+        try:
+            self.assertTrue(started.wait(2))
+            self.assertTrue(captured.wait(2), "capture waited for embedding")
+            atlas.shutdown()
+            with MemoryStore(shared, embedder=None, reranker=None) as store:
+                self.assertTrue(store.recall("cobalt", kinds=["episode"]))
+                self.assertTrue(store.recall("cobalt", kinds=["preference"]))
+                self.assertTrue(store.recall("juniper", kinds=["episode"]))
+        finally:
+            release.set()
+            thread.join()
+            if indexer:
+                indexer.thread.join(5)
+
+        self.egress.side_effect = original_post
+        self.egress.reset_mock()
+        birch = self.provider("birch", embed_url="https://birch.invalid/v1", **settings)
+        birch.sync_turn("The lilac archive is on the shelf.", "Got it.")
+        restarted = self.provider("atlas", embed_url="https://atlas.invalid/v1", **settings)
+        # Wait for both independent workers to complete their committed jobs.
+        deadline = time.monotonic() + 5
+        while any(p._store.pending_embeddings(p._capture_indexer.owner) for p in (restarted, birch)):
+            self.assertLess(time.monotonic(), deadline, "pending jobs did not index after restart")
+            time.sleep(0.01)
+        calls = {host: [] for host in ("birch", "atlas")}
+        for call in self.egress.call_args_list:
+            url, body, headers = call.args
+            profile = urllib.parse.urlsplit(url).hostname.split(".")[0]
+            self.assertEqual(headers["Authorization"], f"Bearer fixture-{profile}-key")
+            calls[profile].extend(body["input"])
+        self.assertTrue(any("juniper" in text for text in calls["atlas"]))
+        self.assertTrue(any("lilac" in text for text in calls["birch"]))
+        self.assertFalse(any("juniper" in text or "cobalt" in text for text in calls["birch"]))
 
 
 class HermesEmbeddingTransportTests(unittest.TestCase):

@@ -23,7 +23,7 @@ from . import text as T
 
 log = logging.getLogger("teresis")
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DAY = 86400.0
 
 SCHEMA = """
@@ -80,6 +80,12 @@ CREATE TABLE IF NOT EXISTS vectors (
     model     TEXT NOT NULL,
     vec       BLOB NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS pending_embeddings (
+    memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    owner     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS pending_embeddings_owner ON pending_embeddings(owner);
 
 CREATE TABLE IF NOT EXISTS entities (
     key        TEXT PRIMARY KEY,
@@ -293,6 +299,7 @@ class MemoryStore:
         meta: dict[str, Any] | None = None,
         replaces: str | None = None,
         scrub_secrets: bool = True,
+        embedding_owner: str | None = None,
     ) -> RememberResult:
         """Store a memory. Dedupes exact/near repeats and supersedes stale values.
 
@@ -317,7 +324,7 @@ class MemoryStore:
         tag_str = " ".join(dict.fromkeys(t.strip().lower().replace(" ", "-") for t in tags if t.strip()))
         h = T.content_hash(content)
         now = self.clock()
-        vec = self._embed_one(content)  # outside the write lock: may be slow
+        vec = None if embedding_owner else self._embed_one(content)
         active, active_params = self._active_sql("m")
 
         refined = False
@@ -372,6 +379,8 @@ class MemoryStore:
                 c.execute(
                     "INSERT INTO vectors(memory_id, model, vec) VALUES (?,?,?)", [new_id, self.embedder.name, vec]
                 )
+            elif embedding_owner:
+                c.execute("INSERT INTO pending_embeddings VALUES (?,?)", [new_id, embedding_owner])
             self._link_entities(c, new_id, content, now)
         status = "created" if not replaced else ("refined" if refined else "superseded")
         return RememberResult(new_id, status, replaced, redacted)
@@ -400,7 +409,7 @@ class MemoryStore:
         return None
 
     def update(self, memory_id: str, content: str | None = None, *, scrub_secrets: bool = True,
-               **changes: Any) -> RememberResult:
+               embedding_owner: str | None = None, **changes: Any) -> RememberResult:
         """Revise a memory. Content changes create a new version (history preserved)."""
         old = self.get(memory_id)
         if old is None or old.superseded_by or old.deleted_at:
@@ -436,6 +445,7 @@ class MemoryStore:
             meta={**old.meta, **changes.get("meta", {})},
             replaces=None if old.key else memory_id,
             scrub_secrets=scrub_secrets,
+            embedding_owner=embedding_owner,
         )
         return res
 
@@ -511,6 +521,7 @@ class MemoryStore:
         as_of: float | None = None,
         touch: bool = True,
         explain: bool = False,
+        lexical_only: bool = False,
     ) -> list[Memory]:
         """Hybrid retrieval: BM25 (Porter) + trigram fuzzy + optional vectors, fused by per-channel normalized scores,
         then re-weighted by recency, importance, reinforcement and pinning.
@@ -545,7 +556,7 @@ class MemoryStore:
         subs = T.sub_queries(query) if w.sub_query > 0 else []
 
         qvecs: dict[str, list[float]] = {}
-        if w.vector > 0 and self.embedder:
+        if not lexical_only and w.vector > 0 and self.embedder:
             try:
                 all_q = [query, *subs]
                 for qt, vec in zip(all_q, self.embedder.embed(all_q)):
@@ -572,7 +583,7 @@ class MemoryStore:
                         by_id[m.id] = m
             scored = sorted(by_id.values(), key=lambda m: m.score or 0, reverse=True)
 
-        if self.reranker and w.rerank > 0 and len(scored) > 1:
+        if not lexical_only and self.reranker and w.rerank > 0 and len(scored) > 1:
             scored = self._rerank(query, scored, explain)
 
         if w.entity_hop > 0 and scored:
@@ -1015,6 +1026,26 @@ class MemoryStore:
             with self._lock:
                 self._conn.execute("VACUUM")
         return {"expired": expired, "purged": purged}
+
+    def pending_embeddings(self, owner: str, batch: int = 32) -> list[tuple[str, str]]:
+        rows = self._q(
+            "SELECT m.id, m.content FROM pending_embeddings p JOIN memories m ON m.id=p.memory_id "
+            "WHERE p.owner=? AND m.deleted_at IS NULL AND (m.expires_at IS NULL OR m.expires_at>?) "
+            "ORDER BY p.rowid LIMIT ?", [owner, self.clock(), batch],
+        )
+        return [(r["id"], r["content"]) for r in rows]
+
+    def complete_embeddings(self, owner: str, model: str, vectors: list[tuple[str, bytes]]) -> None:
+        with self._write() as c:
+            c.executemany(
+                "INSERT OR REPLACE INTO vectors(memory_id, model, vec) "
+                "SELECT m.id, ?, ? FROM pending_embeddings p JOIN memories m ON m.id=p.memory_id "
+                "WHERE m.id=? AND p.owner=? AND m.deleted_at IS NULL "
+                "AND (m.expires_at IS NULL OR m.expires_at>?)",
+                [(model, vec, mid, owner, self.clock()) for mid, vec in vectors],
+            )
+            c.executemany("DELETE FROM pending_embeddings WHERE memory_id=? AND owner=?",
+                          [(mid, owner) for mid, _ in vectors])
 
     def embed_missing(self, batch: int = 32) -> int:
         """Backfill vectors (after enabling an embedder or an outage)."""

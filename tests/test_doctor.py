@@ -144,7 +144,7 @@ class DoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
             db = home / "doctor.db"
-            setup(home)  # an unconfigured but installed client is a real failure, so wire it first
+            setup(home, db=db)  # An installed client must be configured for the DB under test.
             res = run_doctor(db, home=home)
             names = {c["name"]: c for c in res["checks"]}
             self.assertTrue(names["python"]["ok"])

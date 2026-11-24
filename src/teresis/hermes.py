@@ -14,12 +14,15 @@ Behavior, per Hermes' MemoryProvider contract:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
 import os
 import shutil
 import sqlite3
+import threading
+from contextvars import copy_context
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
@@ -104,6 +107,43 @@ class _ProfileEmbedder:
             raise RuntimeError("Teresis embedding request is outside its owning Hermes profile")
         # Automatic and explicit tool recall both use the store. Protect both egress paths.
         return self._delegate.embed([_secrets.redact_secrets(s)[0] for s in texts])
+
+
+class _CaptureIndexer:
+    def __init__(self, store: MemoryStore, embedder: _embed.Embedder, hermes_home: str):
+        self.owner = hashlib.sha256(os.fsencode(Path(hermes_home).resolve())).hexdigest()
+        self.wake = threading.Event()
+        self.stopped = threading.Event()
+        context = copy_context()
+        self.thread = threading.Thread(target=context.run, args=(self._run, store, embedder),
+                                       name="teresis-index", daemon=True)
+        self.thread.start()
+        self.wake.set()  # Resume unfinished work from an earlier session.
+
+    def stop(self) -> None:
+        self.stopped.set()
+        self.wake.set()
+
+    def _run(self, store: MemoryStore, embedder: _embed.Embedder) -> None:
+        while True:
+            self.wake.wait()
+            self.wake.clear()
+            try:
+                while not self.stopped.is_set():
+                    rows = store.pending_embeddings(self.owner)
+                    if not rows:
+                        break
+                    vectors = embedder.embed([content for _, content in rows])
+                    if len(vectors) != len(rows) or not all(vectors):
+                        raise ValueError("embedding response does not match capture batch")
+                    if not self.stopped.is_set():
+                        store.complete_embeddings(self.owner, embedder.name,
+                                                  [(mid, _embed.pack(vec)) for (mid, _), vec in zip(rows, vectors)])
+            except Exception:
+                if not self.stopped.is_set():
+                    log.warning("teresis capture indexing failed; will retry on capture or restart")
+            if self.stopped.is_set():
+                return
 
 
 def _profile_embedder(config: Dict[str, Any], hermes_home: str) -> _embed.Embedder | None:
@@ -194,6 +234,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self._config = {**DEFAULTS, **(config if config is not None else _load_config())}
         self._store: Optional[MemoryStore] = None
+        self._capture_indexer: Optional[_CaptureIndexer] = None
         self._server: Optional[Server] = None
         self._scope = "hermes/default"
         self._read_scopes: List[str] = [self._scope]
@@ -248,8 +289,13 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             reranker = None
         self._store = MemoryStore(self._db_path(hermes_home), embedder=embedder, reranker=reranker)
         self._server = Server(self._store, default_scope=self._read_scopes)
+        if embedder and self._write_enabled:
+            self._capture_indexer = _CaptureIndexer(self._store, embedder, hermes_home)
 
     def shutdown(self) -> None:
+        if self._capture_indexer is not None:
+            self._capture_indexer.stop()
+            self._capture_indexer = None
         if self._store is not None:
             try:
                 self._store.close()
@@ -317,7 +363,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
 
     _POLARITY = {"never", "always", "not", "no", "dont", "don't", "stop", "avoid", "without"}
 
-    def _near_dup(self, content: str):
+    def _near_dup(self, content: str, *, lexical_only: bool = False):
         """Compare against existing non-episode memories about the same subject.
 
         Returns ("dup", m) when an existing memory says the same thing in different words,
@@ -330,7 +376,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         if len(mine) < 3:
             return None
         try:
-            cands = self._store.recall(content, scope=self._read_scopes, k=5, exclude_kinds=["episode"])
+            cands = self._store.recall(content, scope=self._read_scopes, k=5, exclude_kinds=["episode"],
+                                       lexical_only=lexical_only)
         except Exception:
             return None
         for m in cands:
@@ -349,28 +396,39 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
                 return ("supersede", m)
         return None
 
-    def _write_or_skip(self, content: str, **kw) -> bool:
+    def _write_or_skip(self, content: str, *, automatic: bool = False, **kw) -> bool:
         """remember() unless it duplicates an existing memory; revise in place if it supersedes one."""
         content, _ = _secrets.redact_secrets(content)  # belt: store.remember scrubs too
         if not content.strip():
             return False
-        hit = self._near_dup(content)
+        hit = self._near_dup(content, lexical_only=automatic)
         if hit and hit[0] == "dup":
             return False
+        indexer = self._capture_indexer if automatic else None
+        owner = indexer.owner if indexer else None
         if hit:
-            self._store.update(hit[1].id, content)
-            return True
-        self._store.remember(content, **kw)
+            self._store.update(hit[1].id, content, embedding_owner=owner)
+        else:
+            self._store.remember(content, embedding_owner=owner, **kw)
+        if indexer:
+            indexer.wake.set()
         return True
 
     # -- writes ------------------------------------------------------------
+    def _remember_episode(self, content: str, **kw) -> None:
+        indexer = self._capture_indexer
+        self._store.remember(content, scope=self._scope, kind="episode",
+                             embedding_owner=indexer.owner if indexer else None, **kw)
+        if indexer:
+            indexer.wake.set()
+
     def _save_extracted(self, text: str, source: str) -> List[str]:
         saved = []
         for c in _extract.extract(text):
             scope = "user" if c.kind == "preference" else self._scope
             content = c.content
             try:
-                if self._write_or_skip(content, scope=scope, kind=c.kind, importance=c.importance,
+                if self._write_or_skip(content, automatic=True, scope=scope, kind=c.kind, importance=c.importance,
                                        source=source, meta={"session_id": self._session_id}):
                     saved.append(content)
             except Exception as exc:
@@ -391,9 +449,9 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         try:
             if _truthy(self._config.get("capture_turns", True)) and not _is_trivial(authored):
                 who = (turn_author or {}).get("name") or "User"
-                self._store.remember(
+                self._remember_episode(
                     f"{who}: {_trim(authored, 600)}\nAssistant: {_trim(assistant_content, 900)}",
-                    scope=self._scope, kind="episode", importance=0.2,
+                    importance=0.2,
                     ttl_days=float(self._config.get("episode_ttl_days", 30)) or None,
                     source=f"hermes:{self._platform or 'turn'}",
                     meta={"session_id": session_id or self._session_id},
@@ -453,8 +511,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             return
         try:
             task, result = _secrets.redact_secrets(task)[0], _secrets.redact_secrets(result)[0]
-            self._store.remember(
-                f"Delegated: {_trim(task, 300)}\nResult: {_trim(result, 600)}", scope=self._scope, kind="episode",
+            self._remember_episode(
+                f"Delegated: {_trim(task, 300)}\nResult: {_trim(result, 600)}",
                 importance=0.3, ttl_days=float(self._config.get("episode_ttl_days", 30)) or None,
                 source="hermes:delegation", meta={"child_session_id": child_session_id},
             )
