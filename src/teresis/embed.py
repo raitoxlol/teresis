@@ -12,9 +12,12 @@ from __future__ import annotations
 import json
 import math
 import os
+import urllib.error
+import urllib.parse
 import urllib.request
 from array import array
-from typing import Protocol, Sequence
+from ipaddress import ip_address
+from typing import Callable, Protocol, Sequence
 
 try:  # optional fast path
     import numpy as _np  # type: ignore
@@ -28,7 +31,14 @@ class Embedder(Protocol):
     def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
 
 
-def _post(url: str, payload: dict, headers: dict | None = None, timeout: float | None = None) -> dict:
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # A configured Hermes endpoint is the disclosure boundary, not any redirect target.
+        raise urllib.error.HTTPError(req.full_url, code, "embedding endpoint redirected", headers, fp)
+
+
+def _post(url: str, payload: dict, headers: dict | None = None, timeout: float | None = None,
+          *, no_redirect: bool = False) -> dict:
     timeout = timeout or float(os.environ.get("TERESIS_EMBED_TIMEOUT", "120"))
     req = urllib.request.Request(
         url,
@@ -36,28 +46,60 @@ def _post(url: str, payload: dict, headers: dict | None = None, timeout: float |
         headers={"Content-Type": "application/json", **(headers or {})},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    if no_redirect:
+        handlers = [_NoRedirect()]
+        if _is_loopback_host(urllib.parse.urlsplit(url).hostname):
+            # Don't send a configured loopback service (or its bearer) to an ambient HTTP proxy.
+            handlers.append(urllib.request.ProxyHandler({}))
+        open_request = urllib.request.build_opener(*handlers).open
+    else:
+        open_request = urllib.request.urlopen
+    with open_request(req, timeout=timeout) as resp:
         return json.loads(resp.read())
 
 
+def _is_loopback_host(host: str | None) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return bool(host and ip_address(host).is_loopback)
+    except ValueError:
+        return False
+
+
+def _can_send_bearer(url: str) -> bool:
+    parsed = urllib.parse.urlsplit(url)
+    return parsed.scheme == "https" or (parsed.scheme == "http" and _is_loopback_host(parsed.hostname))
+
+
 class OllamaEmbedder:
-    def __init__(self, model: str, url: str = "http://localhost:11434"):
+    def __init__(self, model: str, url: str = "http://localhost:11434", *,
+                 timeout: float | None = None, no_redirect: bool = False):
         self.model, self.url = model, url.rstrip("/")
+        self.timeout, self.no_redirect = timeout, no_redirect
         self.name = f"ollama:{model}"
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
-        data = _post(f"{self.url}/api/embed", {"model": self.model, "input": list(texts)})
+        data = _post(f"{self.url}/api/embed", {"model": self.model, "input": list(texts)},
+                     timeout=self.timeout, no_redirect=self.no_redirect)
         return data["embeddings"]
 
 
 class OpenAIEmbedder:
-    def __init__(self, model: str, url: str, key: str | None = None):
+    def __init__(self, model: str, url: str, key: str | None = None, *,
+                 key_lookup: Callable[[], str | None] | None = None,
+                 timeout: float | None = None, no_redirect: bool = False):
         self.model, self.url, self.key = model, url.rstrip("/"), key
+        self.key_lookup, self.timeout, self.no_redirect = key_lookup, timeout, no_redirect
         self.name = f"openai:{model}"
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
-        headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
-        data = _post(f"{self.url}/embeddings", {"model": self.model, "input": list(texts)}, headers)
+        key = self.key_lookup() if self.key_lookup is not None else self.key
+        if key and self.key_lookup is not None and not _can_send_bearer(self.url):
+            raise ValueError("Hermes embedding credentials require HTTPS or a loopback endpoint")
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        data = _post(f"{self.url}/embeddings", {"model": self.model, "input": list(texts)}, headers,
+                     timeout=self.timeout, no_redirect=self.no_redirect)
         return [row["embedding"] for row in sorted(data["data"], key=lambda r: r["index"])]
 
 
@@ -131,11 +173,14 @@ class FastEmbedReranker:
         return [float(s) for s in self._enc.rerank(query, list(docs))]
 
 
-def reranker_from_env() -> Reranker | None:
-    kind = os.environ.get("TERESIS_RERANK", "").strip().lower()
+def reranker_from_settings(kind: str, model: str = "") -> Reranker | None:
+    kind = kind.strip().lower()
     if not kind or kind == "none":
         return None
     if kind == "fastembed":
-        model = os.environ.get("TERESIS_RERANK_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
-        return FastEmbedReranker(model)
+        return FastEmbedReranker(model or "Xenova/ms-marco-MiniLM-L-6-v2")
     raise ValueError(f"unknown TERESIS_RERANK provider: {kind!r}")
+
+
+def reranker_from_env() -> Reranker | None:
+    return reranker_from_settings(os.environ.get("TERESIS_RERANK", ""), os.environ.get("TERESIS_RERANK_MODEL", ""))

@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import shutil
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 from . import embed as _embed
 from . import extract as _extract
@@ -63,6 +65,8 @@ DEFAULTS: Dict[str, Any] = {
     "capture_turns": True,
     "episode_ttl_days": 30,
     "auto_extract": True,
+    "embed_timeout": 120,
+    "embed_auth": "profile",
     "rerank": "",            # "fastembed" enables the local ONNX cross-encoder; empty/none = off
     "rerank_model": "Xenova/ms-marco-MiniLM-L-6-v2",
 }
@@ -79,6 +83,55 @@ def _load_config() -> Dict[str, Any]:
 
 def _truthy(v: Any) -> bool:
     return v if isinstance(v, bool) else str(v).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _hermes_embedding_key() -> str | None:
+    from agent.secret_scope import get_secret
+
+    return get_secret("TERESIS_EMBED_KEY") or None
+
+
+class _ProfileEmbedder:
+    def __init__(self, delegate: _embed.Embedder, hermes_home: str):
+        self._delegate = delegate
+        self._home = Path(hermes_home).resolve()
+        self.name = delegate.name
+
+    def embed(self, texts):
+        from hermes_constants import get_hermes_home
+
+        if get_hermes_home().resolve() != self._home:
+            raise RuntimeError("Teresis embedding request is outside its owning Hermes profile")
+        # Automatic and explicit tool recall both use the store. Protect both egress paths.
+        return self._delegate.embed([_secrets.redact_secrets(s)[0] for s in texts])
+
+
+def _profile_embedder(config: Dict[str, Any], hermes_home: str) -> _embed.Embedder | None:
+    kind = str(config.get("embed") or "").strip().lower()
+    if kind in ("", "none"):
+        return None
+    model = str(config.get("embed_model") or "").strip()
+    if not model or kind not in {"ollama", "openai"}:
+        raise ValueError("set a supported Hermes embed backend and an embed_model")
+    url = str(config.get("embed_url") or "").strip()
+    if kind == "ollama" and not url:
+        url = "http://localhost:11434"
+    parsed = urlsplit(url)
+    if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username is not None
+            or parsed.password is not None or parsed.query or parsed.fragment):
+        raise ValueError("set an HTTP(S) embedding base URL without credentials, query or fragment")
+    timeout = float(config["embed_timeout"])
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("embed_timeout must be positive and finite")
+    if kind == "ollama":
+        engine = _embed.OllamaEmbedder(model, url, timeout=timeout, no_redirect=True)
+    else:
+        auth = str(config["embed_auth"]).strip().lower()
+        if auth not in {"profile", "none"}:
+            raise ValueError("embed_auth must be profile or none")
+        engine = _embed.OpenAIEmbedder(model, url, key_lookup=_hermes_embedding_key if auth == "profile" else None,
+                                       timeout=timeout, no_redirect=True)
+    return _ProfileEmbedder(engine, hermes_home)
 
 
 def _trim(text: str, n: int) -> str:
@@ -181,18 +234,19 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._write_enabled = kwargs.get("agent_context", "primary") not in _NO_WRITE_CONTEXTS
         self._session_id = session_id
         self._platform = kwargs.get("platform", "")
-        # Hermes does not forward arbitrary env vars to providers, so embedder settings live in config.
-        for key, var in (("embed", "TERESIS_EMBED"), ("embed_model", "TERESIS_EMBED_MODEL"),
-                         ("embed_url", "TERESIS_EMBED_URL"), ("rerank", "TERESIS_RERANK"),
-                         ("rerank_model", "TERESIS_RERANK_MODEL")):
-            if str(self._config.get(key) or "").strip():
-                os.environ[var] = str(self._config[key]).strip()
+        try:
+            embedder = _profile_embedder(self._config, hermes_home)
+        except (TypeError, ValueError):
+            # Keep lexical memory available without logging URLs or credential-shaped config.
+            log.warning("teresis embedding settings are invalid; continuing with lexical memory")
+            embedder = None
         try:  # the reranker is optional: a missing fastembed install must not break the provider
-            reranker = _embed.reranker_from_env()
+            reranker = _embed.reranker_from_settings(str(self._config.get("rerank") or ""),
+                                                     str(self._config.get("rerank_model") or ""))
         except Exception as exc:
             log.warning("teresis reranker unavailable (%s); continuing without rerank", exc)
             reranker = None
-        self._store = MemoryStore(self._db_path(hermes_home), reranker=reranker)
+        self._store = MemoryStore(self._db_path(hermes_home), embedder=embedder, reranker=reranker)
         self._server = Server(self._store, default_scope=self._read_scopes)
 
     def shutdown(self) -> None:
@@ -429,11 +483,15 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
              "(same store your MCP agents use). Use $HERMES_HOME/teresis.db to isolate per profile.", "default": ""},
             {"key": "scope", "description": "Write scope. Empty = hermes/<profile>.", "default": ""},
             {"key": "extra_scopes", "description": "Comma-separated scopes also searched on recall.", "default": "user"},
-            {"key": "embed", "description": "Embedder backend: ollama or openai. Empty = lexical only (or TERESIS_EMBED env).",
+            {"key": "embed", "description": "Embedder backend: ollama or openai. Empty = lexical only.",
              "default": ""},
             {"key": "embed_model", "description": "Embedding model name, e.g. all-minilm.", "default": ""},
             {"key": "embed_url", "description": "Embedder base URL. Empty = http://localhost:11434 for ollama.", "default": ""},
-            {"key": "rerank", "description": "Cross-encoder reranker: fastembed. Empty = off (or TERESIS_RERANK env). "
+            {"key": "embed_auth", "description": "OpenAI-compatible backend only: profile reads the optional Hermes "
+             "TERESIS_EMBED_KEY; none never sends a bearer key.", "default": "profile"},
+            {"key": "embed_timeout", "description": "Embedding request timeout in seconds.",
+             "type": "number", "default": 120, "minimum": 0.1},
+            {"key": "rerank", "description": "Cross-encoder reranker: fastembed. Empty = off. "
              "Needs `pip install fastembed`; falls back gracefully if missing.", "default": ""},
             {"key": "rerank_model", "description": "Reranker model name.", "default": "Xenova/ms-marco-MiniLM-L-6-v2"},
             {"key": "capture_turns", "description": "Store each turn as a short-lived episode.", "type": "boolean",
@@ -469,17 +527,10 @@ _PLUGIN_INIT = '''"""teresis memory provider for Hermes (MemoryProvider). Genera
 from .teresis.hermes import TeresisMemoryProvider, register  # noqa: F401  (register_memory_provider)
 '''
 
-_PLUGIN_YAML = """name: teresis
-version: {version}
-description: "teresis — local hybrid-search memory (SQLite FTS5 + trigram + optional embeddings), shared with MCP agents."
-"""
-
-
 def install(hermes_home: str | os.PathLike, *, link: bool = False) -> Path:
     """Install the plugin into ``$HERMES_HOME/plugins/teresis``. ``link`` symlinks the package (dev mode)."""
-    from . import __version__
-
     pkg = Path(__file__).resolve().parent
+    manifest = (pkg / "plugin.yaml").read_text(encoding="utf-8")
     dest = Path(hermes_home).expanduser() / "plugins" / PLUGIN_KEY
     dest.mkdir(parents=True, exist_ok=True)
     target = dest / "teresis"
@@ -492,7 +543,7 @@ def install(hermes_home: str | os.PathLike, *, link: bool = False) -> Path:
     else:
         shutil.copytree(pkg, target, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     (dest / "__init__.py").write_text(_PLUGIN_INIT)
-    (dest / "plugin.yaml").write_text(_PLUGIN_YAML.format(version=__version__))
+    (dest / "plugin.yaml").write_text(manifest, encoding="utf-8")
     return dest
 
 

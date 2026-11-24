@@ -394,7 +394,8 @@ Config goes under `plugins.teresis` in `config.yaml`:
 | `db_path` | `""` | Empty means the shared `~/.local/share/teresis/memory.db`, the same file your MCP agents use. Set `$HERMES_HOME/teresis.db` to isolate a profile. |
 | `scope` | `hermes/<profile>` | Write scope |
 | `extra_scopes` | `user` | Also searched on recall (comma-separated) |
-| `embed` / `embed_model` / `embed_url` | `""` | Embedder for this provider, e.g. `ollama` / `all-minilm`. Hermes does not forward `TERESIS_EMBED*` env vars, so set them here. |
+| `embed` / `embed_model` / `embed_url` | `""` | Embedder settings are per-profile, e.g. `ollama` / `all-minilm`. |
+| `embed_auth` / `embed_timeout` | `profile` / `120` | OpenAI-compatible auth uses an optional Hermes-scoped `TERESIS_EMBED_KEY`; `none` sends no bearer. Timeout is seconds. |
 | `rerank` / `rerank_model` | `""` | Optional local ONNX cross-encoder (`fastembed` / `Xenova/ms-marco-MiniLM-L-6-v2`). |
 | `capture_turns` | `true` | Save turns as episodes |
 | `episode_ttl_days` | `30` | `0` keeps them forever |
@@ -407,7 +408,12 @@ the fact is stored. Ordinary placeholders like `API_KEY=your-api-key-here` still
 
 Lexical prefetch ranks by shared words, then normalizes the best hit to about 1.0. A sushi order can pull in a gym note that only shares "want", or a music note that only shares "like". Prefetch now also requires a distinctive shared term (not a weak verb) and drops anything under `prefetch_min_score`. Explicit tool recall stays permissive so a search can still see the weak hits.
 
-Embeddings are what make that ranking semantic. Hermes does not forward `TERESIS_EMBED*` / `TERESIS_RERANK*` into the provider, so set them under `plugins.teresis` and backfill:
+Embeddings are what make that ranking semantic. Set `embed`, `embed_model`, `embed_url` and
+the optional reranker under `plugins.teresis` in the selected Hermes profile.
+If an older profile relied on standalone `TERESIS_EMBED*` or `TERESIS_RERANK*` variables,
+move the non-secret settings here; the Hermes provider no longer inherits those variables.
+Set any OpenAI-compatible key through Hermes's profile credential controls; don't put it in
+`config.yaml`. Standalone Teresis CLI/MCP environment settings and persisted memory are unchanged:
 
 ```yaml
 plugins:
