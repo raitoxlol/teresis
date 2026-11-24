@@ -23,7 +23,8 @@ import {Lotus} from './components/Lotus';
 
 const GITHUB = 'https://github.com/raitoxlol/teresis';
 const LICENSE = `${GITHUB}/blob/main/LICENSE`;
-const LOGO = 'logos/teresis-lockup-white.svg';
+const BASE = import.meta.env.BASE_URL;
+const LOGO = `${BASE}logos/teresis-lockup-white.svg`;
 const REDUCED = '(prefers-reduced-motion: reduce)';
 
 function cli(line: string) {
@@ -82,33 +83,204 @@ function useTabKeys(event: KeyboardEvent<HTMLButtonElement>, index: number, coun
   document.getElementById(`${event.currentTarget.id.split('-').slice(0, -1).join('-')}-${target}`)?.focus();
 }
 
-function HeroTranscript() {
+// The hero terminal runs on the visitor's own fact. Output lines use the real CLI format
+// (`created <16 hex>`, `<id>  [fact · user · 1.000]`, captured from one remember + recall on an
+// empty store). Nothing leaves the browser: the fact is kept in localStorage so a return visit
+// is greeted with it, the way an agent with Teresis would be.
+const YOU_KEY = 'teresis.you.v1';
+const YOU_EXAMPLES = ['I deploy on Fridays', 'Keep answers short', 'I write Rust'];
+const YOU_STOP = new Set(['the', 'and', 'for', 'you', 'your', 'are', 'with', 'that', 'this', 'have', 'not', 'but', 'use', 'like', 'prefer', 'always', 'never', 'keep', 'call', 'from', 'into', 'only']);
+
+type Told = {fact: string; id: string; at: number};
+type YouLine = {kind: 'session' | 'cmd' | 'out' | 'fact'; text: string};
+
+function loadTold(): Told | null {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(YOU_KEY) ?? 'null');
+    return typeof value?.fact === 'string' && value.fact && typeof value.id === 'string' && typeof value.at === 'number' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveTold(told: Told | null) {
+  try {
+    if (told) window.localStorage.setItem(YOU_KEY, JSON.stringify(told));
+    else window.localStorage.removeItem(YOU_KEY);
+  } catch {
+    // Private windows can refuse storage; the run still works for this visit.
+  }
+}
+
+function memoryId() {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** The word an agent would most likely search for: the longest one that is not filler. */
+function recallWord(fact: string) {
+  const words = fact.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [];
+  const pick = (list: string[]) => list.reduce((best, word) => (word.length > best.length ? word : best), '');
+  return pick(words.filter((word) => !YOU_STOP.has(word))) || pick(words) || fact.slice(0, 24);
+}
+
+function since(at: number) {
+  const minutes = (Date.now() - at) / 60000;
+  if (minutes < 2) return 'a moment ago';
+  if (minutes < 60) return `${Math.round(minutes)} minutes ago`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${Math.round(hours)} hour${Math.round(hours) === 1 ? '' : 's'} ago`;
+  const days = hours / 24;
+  return days < 2 ? 'yesterday' : `${Math.round(days)} days ago`;
+}
+
+const quote = (text: string) => text.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+
+function recallLines(told: Told, agent: string): YouLine[] {
+  return [
+    {kind: 'session', text: `${agent} · new session`},
+    {kind: 'cmd', text: `teresis recall "${quote(recallWord(told.fact))}" -s user`},
+    {kind: 'out', text: `${told.id}  [fact · user · 1.000]`},
+    {kind: 'fact', text: told.fact},
+  ];
+}
+
+function rememberLines(told: Told): YouLine[] {
+  return [
+    {kind: 'session', text: 'Claude Code · session 1'},
+    {kind: 'cmd', text: `teresis remember "${quote(told.fact)}" -s user`},
+    {kind: 'out', text: `created ${told.id}`},
+    ...recallLines(told, 'Codex'),
+  ];
+}
+
+const LINE_DELAY: Record<YouLine['kind'], number> = {session: 520, cmd: 420, out: 180, fact: 120};
+
+function YouTerminal({told, returning, onTell, onForget}: {told: Told | null; returning: boolean; onTell: (fact: string) => void; onForget: () => void}) {
+  const [draft, setDraft] = useState('');
+  const [asking, setAsking] = useState(!told);
+  const [shown, setShown] = useState(returning ? Infinity : 0);
+  const [forgotten, setForgotten] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const lines = useMemo(() => (told ? (returning ? recallLines(told, 'Hermes') : rememberLines(told)) : []), [told, returning]);
+  const done = shown >= lines.length;
+
+  useEffect(() => {
+    if (asking || done) return;
+    if (window.matchMedia(REDUCED).matches) {
+      setShown(Infinity);
+      return;
+    }
+    const timer = window.setTimeout(() => setShown((count) => count + 1), LINE_DELAY[lines[shown].kind]);
+    return () => window.clearTimeout(timer);
+  }, [asking, done, shown, lines]);
+
+  function tell(fact: string) {
+    const clean = fact.replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!clean) {
+      input.current?.focus();
+      return;
+    }
+    onTell(clean);
+    setShown(0);
+    setAsking(false);
+    setForgotten(false);
+  }
+
+  function again() {
+    setDraft('');
+    setAsking(true);
+    window.setTimeout(() => input.current?.focus(), 0);
+  }
+
+  function forget() {
+    onForget();
+    setDraft('');
+    setAsking(true);
+    setForgotten(true);
+  }
+
   return (
-    <div className="hero-terminal ui ui-term">
+    <div className="hero-terminal you-terminal ui ui-term">
       <div className="terminal-bar">
         <span>teresis · zsh</span>
-        <span className="terminal-db">memory.db</span>
+        <span className="terminal-db">memory.db · {told && !asking ? 1 : 0} {told && !asking ? 'row' : 'rows'}</span>
       </div>
-      <div className="hero-transcript" aria-label="First four guided terminal commands">
-        {DEMO_STEPS.slice(0, 4).map((step) => (
-          <div className="transcript-command" key={step.id}>
-            <div className="command-line"><span aria-hidden="true">$ </span>{step.cmd}</div>
-            {step.out.map((line, index) => <div className="output-line" key={`${step.id}-${index}`}>{cli(line)}</div>)}
+      {asking ? (
+        <form className="you-body you-form" onSubmit={(event) => { event.preventDefault(); tell(draft); }}>
+          <label className="you-comment" htmlFor="you-fact">{forgotten ? '# Forgotten. Tell your agents something else about you.' : '# Tell your agents one thing about you.'}</label>
+          <div className="command-line you-line">
+            <span aria-hidden="true">$ </span>teresis remember "
+            <span className="you-field"><input
+              ref={input}
+              id="you-fact"
+              className="you-input"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={YOU_EXAMPLES[0]}
+              maxLength={80}
+              autoComplete="off"
+              spellCheck={false}
+              enterKeyHint="done"
+            />" -s user</span>
           </div>
-        ))}
-      </div>
+          <div className="you-actions">
+            <button className="you-run" type="submit">Remember</button>
+            <span className="you-or">or try</span>
+            {YOU_EXAMPLES.map((example) => <button className="you-chip" type="button" key={example} onClick={() => tell(example)}>{example}</button>)}
+          </div>
+          <p className="you-note">Runs in this tab. Nothing is sent anywhere.</p>
+        </form>
+      ) : told && (
+        <div className="you-body">
+          <div className="you-transcript" aria-live="polite">
+            {lines.slice(0, shown).map((line, index) => (
+              <div className={`you-${line.kind}${line.kind === 'cmd' ? ' command-line' : line.kind === 'session' ? '' : ' output-line'}`} key={`${line.kind}-${index}`}>
+                {line.kind === 'cmd' && <span aria-hidden="true">$ </span>}
+                {line.kind === 'out' ? cli(line.text) : line.text}
+              </div>
+            ))}
+            {!done && <span className="terminal-cursor" aria-hidden="true" />}
+          </div>
+          <div className={`you-after${done ? ' is-shown' : ''}`} hidden={!done}>
+            <p>{returning ? `You said this ${since(told.at)}. Hermes found it without being told again.` : 'Codex knew it in a fresh session. Claude Code and Hermes read the same file.'}</p>
+            <div className="you-after-actions">
+              <button className="you-chip" type="button" onClick={again}>Tell it something else</button>
+              <button className="you-chip" type="button" onClick={forget}>Forget it</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function Hero() {
+  const [told, setTold] = useState<Told | null>(loadTold);
+  const [returning, setReturning] = useState(() => told !== null);
+
+  function tell(fact: string) {
+    const next = {fact, id: memoryId(), at: Date.now()};
+    saveTold(next);
+    setTold(next);
+    setReturning(false);
+  }
+
+  function forget() {
+    saveTold(null);
+    setTold(null);
+    setReturning(false);
+  }
+
   return (
     <section className="hero hero--centred ground-surface" data-enter aria-labelledby="hero-title" id="top" style={{'--h': 1} as CSSProperties}>
       <div className="wrap">
         <div className="hero-text">
           <div className="hero-copy">
-            <h1 id="hero-title">Local long-term memory for AI agents</h1>
-            <p className="hero-lead">Teresis keeps facts, preferences and decisions in one SQLite file shared by Hermes, Claude Code, Codex and other MCP clients. Writes make zero LLM calls.</p>
+            {returning && told && <p className="hero-welcome">Welcome back. Your agents still know “{told.fact}”</p>}
+            <h1 id="hero-title">Tell your agents once</h1>
+            <p className="hero-lead">Teresis is local long-term memory for AI agents. Your facts, preferences and decisions live in one SQLite file shared by Hermes, Claude Code, Codex and other MCP clients. Writes make zero LLM calls.</p>
             <div className="btn-row hero-actions">
               <a className="btn btn--primary" href="#install">Install Teresis</a>
               <a className="btn btn--secondary" href="#benchmarks">See the benchmarks</a>
@@ -116,7 +288,7 @@ function Hero() {
             <p className="hero-proof">Live Hermes test: <strong>{LIVE.teresis.right}/{LIVE.teresis.asked}</strong> with Teresis, <strong>{LIVE.stock.right}/{LIVE.stock.asked}</strong> with stock memory.</p>
           </div>
           <div className="hero-visual">
-            <HeroTranscript />
+            <YouTerminal told={told} returning={returning} onTell={tell} onForget={forget} />
             <div className="hero-lotus-mark" aria-hidden="true"><Lotus intro grid /></div>
           </div>
         </div>
@@ -387,9 +559,9 @@ function WorksWith() {
           <div className="works-pair" aria-label="Teresis native memory provider for Hermes Agent">
             <p className="works-pair-label">Native memory provider</p>
             <div className="works-brands">
-              <div className="works-logo works-logo--teresis"><span className="works-icon-tile"><img src="logos/teresis-mark.svg" alt="" /></span></div>
+              <div className="works-logo works-logo--teresis"><span className="works-icon-tile"><img src={`${BASE}logos/teresis-mark.svg`} alt="" /></span></div>
               <span className="pair-divider" aria-hidden="true">+</span>
-              <div className="works-logo"><span className="works-icon-tile"><img src="logos/hermes-agent.svg" alt="" /></span></div>
+              <div className="works-logo"><span className="works-icon-tile"><img src={`${BASE}logos/hermes-agent.svg`} alt="" /></span></div>
             </div>
             <ul className="hooks-list">
               {HERMES_HOOKS.map((entry) => <li key={entry.hook}><code>{entry.hook}</code><span>{entry.does}</span></li>)}
@@ -406,7 +578,7 @@ function WorksWith() {
             ['codex', 'Codex', 'MCP'],
             ['cursor', 'Cursor', 'MCP'],
           ].map(([id, name, kind]) => (
-            <div className="tool-card" key={id}><span className="tool-icon-tile"><img src={`assets/icons/${id}.svg`} alt="" /></span><strong>{name}</strong><span>{kind}</span></div>
+            <div className="tool-card" key={id}><span className="tool-icon-tile"><img src={`${BASE}assets/icons/${id}.svg`} alt="" /></span><strong>{name}</strong><span>{kind}</span></div>
           ))}
           <div className="tool-card"><span className="tool-icon-tile tool-glyph">HTTP</span><strong>HTTP</strong><span>Local HTTP API</span></div>
           <div className="tool-card"><span className="tool-icon-tile tool-glyph">Py</span><strong>Python</strong><span>Python API</span></div>
