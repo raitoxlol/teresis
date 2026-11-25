@@ -7,6 +7,7 @@ import sys
 from typing import Any, Callable, TextIO
 
 from . import __version__
+from . import threats as _threats
 from .store import MemoryStore
 
 SUPPORTED = ("2025-06-18", "2025-03-26", "2024-11-05")
@@ -165,6 +166,10 @@ class Server:
 
     def call_tool(self, name: str, a: dict[str, Any]) -> tuple[str, Any]:
         s = self.store
+        if name in ("memory_remember", "memory_update") and a.get("content"):
+            hit = _threats.first_threat(str(a["content"]))
+            if hit:
+                raise ValueError(_threats.rejection_message(hit))
         if name == "memory_remember":
             r = s.remember(
                 a["content"], scope=self._scope(a), kind=a.get("kind", "fact"), key=a.get("key"),
