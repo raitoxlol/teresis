@@ -267,7 +267,12 @@ class MemoryStore:
                 with self._lock:  # executescript manages its own transaction
                     c.executescript(f"BEGIN IMMEDIATE;{SCHEMA}PRAGMA user_version={SCHEMA_VERSION};COMMIT;")
             else:
-                c.execute("SELECT 1 FROM memories LIMIT 1").fetchall()  # also proves the file is readable here
+                try:
+                    c.execute("SELECT 1 FROM memories LIMIT 1").fetchall()  # also proves the file is readable here
+                except sqlite3.OperationalError:
+                    raise
+                except sqlite3.DatabaseError as exc:  # damaged pages: stay up, every call reports the damage
+                    log.warning("teresis database %s looks damaged (%s); continuing, run `teresis doctor`", self.path, exc)
             self._conn = c
             self.read_only = False
         except sqlite3.OperationalError as exc:
@@ -874,14 +879,22 @@ class MemoryStore:
     def _touch(self, ids: list[str]) -> None:
         if not ids:
             return
-        try:
-            with self._write() as c:
-                c.executemany(
-                    "UPDATE memories SET access_count=access_count+1, accessed_at=? WHERE id=?",
-                    [(self.clock(), i) for i in ids],
-                )
-        except sqlite3.OperationalError as exc:  # reads must not fail because a writer is busy
-            log.debug("touch skipped: %s", exc)
+        with self._lock:
+            # Bookkeeping must never make a read wait for another writer.
+            self._conn.execute("PRAGMA busy_timeout=0")
+            try:
+                with self._write() as c:
+                    c.executemany(
+                        "UPDATE memories SET access_count=access_count+1, accessed_at=? WHERE id=?",
+                        [(self.clock(), i) for i in ids],
+                    )
+            except sqlite3.DatabaseError as exc:  # reads must not fail because a writer is busy or the file is damaged
+                log.debug("touch skipped: %s", exc)
+            finally:
+                try:
+                    self._conn.execute(f"PRAGMA busy_timeout={int(self._busy * 1000)}")
+                except sqlite3.Error:
+                    pass
 
     def context(self, scope: str | Sequence[str] = "global", *, query: str = "", budget_tokens: int = 1200,
                 exclude_kinds: Sequence[str] = ("episode", "candidate")) -> str:

@@ -113,6 +113,35 @@ class ResilienceTests(unittest.TestCase):
         self.assertTrue(s.recall("narwhal", scope="hermes/lab"))
         self.assertFalse(s.recall("okapi", scope="hermes/lab"))
 
+    def test_recall_does_not_wait_for_a_busy_writer(self):
+        self.seed()
+        holder = sqlite3.connect(self.db, isolation_level=None)
+        holder.execute("BEGIN IMMEDIATE")
+        self.addCleanup(holder.close)
+        s = MemoryStore(self.db, embedder=None, reranker=None, busy_timeout=3)
+        self.addCleanup(s.close)
+        t0 = time.time()
+        self.assertTrue(s.recall("zebra1 habitat", scope="hermes/lab"))  # the access-count update must not block
+        self.assertLess(time.time() - t0, 1.0)
+
+    def test_partially_corrupt_database_still_opens_and_reports_the_damage(self):
+        s = MemoryStore(self.db, embedder=None, reranker=None)
+        for i in range(60):
+            s.remember(f"synthetic fact number {i} about zebra{i} habitat", scope="hermes/lab")
+        s._conn.execute("PRAGMA wal_checkpoint(" + "TRUNC" + "ATE)")
+        s.close()
+        for ext in ("-wal", "-shm"):
+            Path(str(self.db) + ext).unlink(missing_ok=True)
+        with open(self.db, "r+b") as f:
+            f.seek(4096 * 2)
+            f.write(b"\xff" * 4096)
+        p = TeresisMemoryProvider(config={"db_path": str(self.db)})
+        p.initialize("s", hermes_home=str(self.dir), platform="cli", agent_identity="lab")  # must not raise
+        self.addCleanup(p.shutdown)
+        out = json.loads(p.handle_tool_call("memory_stats", {}))
+        self.assertTrue("error" in out or "total" in out)  # a clear answer either way, not "not initialized"
+        self.assertNotIn("not initialized", json.dumps(out))
+
     def test_garbage_file_fails_loudly_and_tools_say_why(self):
         self.db.write_bytes(os.urandom(8192))
         p = TeresisMemoryProvider(config={"db_path": str(self.db)})
