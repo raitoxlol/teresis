@@ -87,6 +87,13 @@ DEFAULTS: Dict[str, Any] = {
 }
 
 
+def _profile_db_path(configured: str, home: str | os.PathLike) -> Path:
+    raw = configured.strip()
+    if not raw:
+        return default_db_path()
+    return Path(raw.replace("${HERMES_HOME}", os.fspath(home)).replace("$HERMES_HOME", os.fspath(home))).expanduser()
+
+
 def _load_config() -> Dict[str, Any]:
     try:
         from hermes_cli.config import cfg_get, load_config_readonly
@@ -301,10 +308,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
 
     # -- lifecycle ---------------------------------------------------------
     def _db_path(self, hermes_home: str) -> str:
-        raw = str(self._config.get("db_path") or "").strip()
-        if not raw:
-            return str(default_db_path())
-        return os.path.expanduser(raw.replace("${HERMES_HOME}", hermes_home).replace("$HERMES_HOME", hermes_home))
+        return str(_profile_db_path(str(self._config.get("db_path") or ""), hermes_home))
 
     def initialize(self, session_id: str, **kwargs) -> None:
         hermes_home = str(kwargs.get("hermes_home") or os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
@@ -820,7 +824,7 @@ def import_memories(
     """Import Hermes built-in MEMORY.md and USER.md entries into a Teresis store (non-destructive, idempotent)."""
     home = Path(hermes_home).expanduser()
     cfg = _read_teresis_yaml_config(home)
-    target_db = Path(db_path or cfg.get("db_path") or default_db_path()).expanduser()
+    target_db = Path(db_path).expanduser() if db_path else _profile_db_path(cfg.get("db_path", ""), home.absolute())
     default_scope = f"hermes/{home.name}" if home.parent.name == "profiles" else "hermes/default"
     target_scope = (scope or cfg.get("scope") or default_scope).strip()
 

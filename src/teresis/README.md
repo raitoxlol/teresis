@@ -11,11 +11,12 @@ teresis hermes install --activate --profile work --db /absolute/path/memory.db
 hermes --profile work memory status
 ```
 
-The command will not switch away from an existing external provider. For an install
-managed by Hermes, use `hermes --profile work memory setup` and select Teresis.
-Check the database path and start a new session. Use a separate database for profiles
-that should not share memory. Scopes organize retrieval within a file; they are not
-authorization boundaries.
+Without `--db`, activation reuses the profile's configured database or chooses the standard
+shared Teresis path for a new pin. The command will not switch away from an existing external
+provider. For an install managed by Hermes, use `hermes --profile work memory setup` and select
+Teresis. Check the database path and start a new session. Use a separate database for profiles
+that should not share memory. Scopes organize retrieval within a file; they are not authorization
+boundaries.
 
 ## Data, network and processes
 
@@ -25,6 +26,8 @@ authorization boundaries.
   durable preferences and decisions. Turn capture and extraction are configurable.
   Setup never imports existing Hermes memory files. The separately invoked
   `teresis hermes import` CLI command reads the profile's `MEMORY.md` and `USER.md`.
+  Use `--dry-run --json` to see the resolved database before writing; import does not
+  automatically move old stray database files.
   Credential-pattern redaction is best effort, not a privacy guarantee.
 - Lexical mode, the default, makes no provider network or model calls and requires
   no credentials. The provider does not emit telemetry. Explicit Ollama or

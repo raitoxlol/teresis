@@ -618,6 +618,43 @@ class HttpTests(unittest.TestCase):
                 all_text = " ".join(m["content"] for m in s.export())
                 self.assertNotIn("sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456", all_text)
 
+    def test_hermes_import_resolves_profile_templates_and_explicit_override(self):
+        import io
+        from contextlib import redirect_stdout
+        from teresis.cli import main as cli_main
+        from teresis.hermes import import_memories
+
+        for variable in ("$HERMES_HOME", "${HERMES_HOME}"):
+            with self.subTest(variable=variable), tempfile.TemporaryDirectory() as d:
+                home = Path(d) / "profiles" / "work"
+                (home / "memories").mkdir(parents=True)
+                (home / "memories" / "MEMORY.md").write_text("The launch binder is chartreuse.\n")
+                (home / "config.yaml").write_text(
+                    f"plugins:\n  teresis:\n    db_path: '{variable}/work memory.db'\n"
+                )
+                dbp = home / "work memory.db"
+                override = Path(d) / "override memory.db"
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    self.assertEqual(cli_main(["hermes", "import", "--home", str(home), "--dry-run", "--json"]), 0)
+                dry = json.loads(out.getvalue())
+                self.assertEqual((dry["db_path"], dry["scope"], dry["created"]), (str(dbp), "hermes/work", 0))
+                self.assertFalse(dbp.exists())
+                explicit_dry = import_memories(home, db_path=override, dry_run=True)
+                self.assertEqual(explicit_dry["db_path"], str(override))
+                self.assertFalse(override.exists())
+                literal_dry = import_memories(home, db_path="$HERMES_HOME/explicit.db", dry_run=True)
+                self.assertEqual(literal_dry["db_path"], "$HERMES_HOME/explicit.db")
+
+                imported = import_memories(home)
+                self.assertEqual((imported["db_path"], imported["created"]), (str(dbp), 1))
+                explicit = import_memories(home, db_path=override)
+                self.assertEqual((explicit["db_path"], explicit["created"]), (str(override), 1))
+                for db in (dbp, override):
+                    with MemoryStore(db, embedder=None, reranker=None) as store:
+                        hits = store.recall("chartreuse", scope="hermes/work", inherit=False)
+                        self.assertEqual([m.content for m in hits], ["The launch binder is chartreuse."])
+
     def test_cli_db_and_json_after_subcommand(self):
         import io
         from contextlib import redirect_stdout

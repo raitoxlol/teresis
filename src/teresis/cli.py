@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 import tempfile
 
@@ -207,7 +208,8 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     print(f"{res['status']}: Teresis for Hermes profile {res['profile']} → {res['db']}")
                     if not args.dry_run:
-                        print("Start a new Hermes session and check `hermes memory status` for that profile.")
+                        print(f"Check: hermes --profile {shlex.quote(res['profile'])} memory status")
+                        print("Start a new Hermes session to use Teresis.")
                 return 0
             if args.profile or args.dry_run or args.db:
                 p.error("--profile, --dry-run and --db apply to hermes install --activate")
