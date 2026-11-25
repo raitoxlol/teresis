@@ -43,6 +43,8 @@ The command verifies the corpus, tokenizer and rank fixture. It ingests each
 history into a temporary Teresis database, applies redaction and disclosure
 checks, then verifies the exact output fingerprint. It prepares 40 jobs from
 frozen rankings; it does not run inference or recompute the retrieval ranks.
+The inference runner and blind grading sheet are not part of this repository.
+It reproduces the exact model inputs; the scored outputs are an archived run.
 
 ## Protocol
 
@@ -53,6 +55,12 @@ frozen rankings; it does not run inference or recompute the retrieval ranks.
   of `calendar-v1:c{history}q{question}`. Answer text and gold evidence do
   not enter selection. The cohort targets this feature rather than estimating
   general LoCoMo accuracy.
+  These histories were previously used for retrieval. The rank source was the
+  `base` field of `dialogue-confirm-ranks.json.gz` (uncompressed SHA-256
+  `44f5986bb46a30894e5e47709fea320e29115a41e1b1aa4fe5ef0d32214ec292`).
+  The exclusion source was `hermes-dialogue-pilot.json` (SHA-256
+  `19f74de7d0fefdc14b72570f57cac84b2da06fcff01085744109d022f23c832e`).
+  Neither upstream artifact is required to replay the selected IDs.
 - Compare inline dates against inline dates plus calendar notes. Consider the
   same ten eligible hits. Admit a whole turn to both arms only if both complete
   packets still fit in 700 Qwen tokens. Question, prompt wrapper and completion
@@ -76,3 +84,6 @@ The note recognizes `yesterday`, `tomorrow`, `last month`, `last year` and
 `last week`. For `last week` it retains the precision of "week before DATE".
 It skips `the last ...` rather than assuming a calendar period. It cannot
 establish the date of an event from a quotation, a plan or a counterfactual.
+Phrase matching can also misread idioms or nested references, such as
+"my last year of college" or "the day before yesterday". Do not use these
+notes as authoritative timestamps.
