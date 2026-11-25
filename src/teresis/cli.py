@@ -216,8 +216,12 @@ def main(argv: list[str] | None = None) -> int:
             dest = install(home, link=args.link)
             print(f"installed teresis provider at {dest}\nactivate: hermes config set memory.provider teresis")
             return 0
-        res = import_memories(home, db_path=args.db, scope=args.scope, user_scope=args.user_scope,
-                              dry_run=args.dry_run)
+        try:
+            res = import_memories(home, db_path=args.db, scope=args.scope, user_scope=args.user_scope,
+                                  dry_run=args.dry_run)
+        except (OSError, ValueError) as exc:
+            print(f"Teresis Hermes import stopped: {exc}", file=sys.stderr)
+            return 1
         if args.json:
             print(json.dumps(res, indent=2))
         else:

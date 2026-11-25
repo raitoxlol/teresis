@@ -140,7 +140,7 @@ class SetupTests(unittest.TestCase):
                 self.assertEqual(result["status"], "partial")
                 self.assertTrue(dest.is_symlink())
                 self.assertEqual(os.readlink(dest), "missing-plugin")
-                self.assertIn("unchanged", result["detail"])
+                self.assertIn("unchanged, not verified", result["detail"])
 
     def test_general_setup_refuses_symlinked_hermes_plugin_root(self):
         h = self.home / ".hermes"

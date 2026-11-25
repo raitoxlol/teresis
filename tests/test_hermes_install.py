@@ -84,6 +84,22 @@ class HermesActivationTests(unittest.TestCase):
         self.assertFalse((self.home / "plugins").exists())
         self.assertEqual(self.writes, [])
 
+    def test_unexpandable_user_pin_is_rejected_before_install(self):
+        self.values["plugins.teresis.db_path"] = "~teresis-user-that-does-not-exist/file.db"
+        original = Path.expanduser
+
+        def expand(path):
+            if str(path).startswith("~teresis-user-that-does-not-exist"):
+                raise RuntimeError("Could not determine home directory.")
+            return original(path)
+
+        with patch.object(Path, "expanduser", expand):
+            with self.assertRaisesRegex(ValueError, "cannot expand the user home"):
+                activate("work")
+        self.assertFalse((self.home / "plugins").exists())
+        self.assertEqual(self.writes, [])
+        self.assertEqual(self.values["memory.provider"], "builtin")
+
     def test_whitespace_pin_is_replaced_with_default(self):
         self.values["plugins.teresis.db_path"] = "   "
         with patch("teresis.hermes_install.default_db_path", return_value=self.db):

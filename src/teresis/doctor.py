@@ -195,7 +195,7 @@ def setup(home: Path | None = None, *, db: str | os.PathLike | None = None,
                 plugin_root = client.config / "plugins"
                 dest = plugin_root / "teresis"
                 if os.path.lexists(dest):
-                    install_detail = f"existing Hermes plugin path (unchanged): {dest}"
+                    install_detail = f"existing Hermes plugin path (unchanged, not verified): {dest}; verify it works before continuing"
                 elif plugin_root.is_symlink():
                     raise ValueError("refusing to install through a symlinked Hermes plugin directory")
                 elif dry_run:

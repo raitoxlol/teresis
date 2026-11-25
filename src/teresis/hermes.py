@@ -91,7 +91,11 @@ def _profile_db_path(configured: str, home: str | os.PathLike) -> Path:
     raw = configured.strip()
     if not raw:
         return default_db_path()
-    return Path(raw.replace("${HERMES_HOME}", os.fspath(home)).replace("$HERMES_HOME", os.fspath(home))).expanduser()
+    path = Path(raw.replace("${HERMES_HOME}", os.fspath(home)).replace("$HERMES_HOME", os.fspath(home)))
+    try:
+        return path.expanduser()
+    except RuntimeError as exc:
+        raise ValueError("cannot expand the user home in Hermes Teresis db_path") from exc
 
 
 def _load_config() -> Dict[str, Any]:
@@ -825,6 +829,9 @@ def import_memories(
     home = Path(hermes_home).expanduser()
     cfg = _read_teresis_yaml_config(home)
     target_db = Path(db_path).expanduser() if db_path else _profile_db_path(cfg.get("db_path", ""), home.absolute())
+    if not db_path and cfg.get("db_path", "").strip() and not target_db.is_absolute():
+        raise ValueError("Hermes Teresis db_path must be absolute or start with $HERMES_HOME; "
+                         "use --db to choose the import destination")
     default_scope = f"hermes/{home.name}" if home.parent.name == "profiles" else "hermes/default"
     target_scope = (scope or cfg.get("scope") or default_scope).strip()
 
