@@ -25,7 +25,7 @@ def exercise_provider(phase):
     provider = load_memory_provider("teresis", register_skills=False)
     assert provider is not None, "Hermes did not load Teresis"
     manager.add_provider(provider)
-    manager.initialize_all("native-test")
+    manager.initialize_all("native-test", platform="cli")
     try:
         if phase != "restart":
             manager.sync_all(FIRST, "Understood.")
