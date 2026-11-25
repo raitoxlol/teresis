@@ -1086,6 +1086,7 @@ class MemoryStore:
         n = 0
         with self._write() as c:
             for d in records:
+                d = {**d, "content": _secrets.redact_secrets(str(d["content"]))[0]}  # never restore a raw credential
                 tags = d.get("tags") or []
                 c.execute(
                     "INSERT OR IGNORE INTO memories (id, scope, kind, key, content, tags, meta, source, importance,"
