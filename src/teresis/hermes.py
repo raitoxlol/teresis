@@ -33,6 +33,7 @@ from . import extract as _extract
 from . import provenance as _prov
 from . import review as _review
 from . import secrets as _secrets
+from . import temporal as _temporal
 from . import threats as _threats
 from .mcp import TOOLS, Server
 from .store import MemoryStore, default_db_path
@@ -375,7 +376,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         lines = [f"## {title}"]
         for m in mems:
             label = m.kind + (f" {m.key}" if m.key else "")
-            lines.append(f"- [{label}] {_trim(m.content, 1200)} (id {m.id})")
+            content = _temporal.with_saved_note(m.content, m.created_at, display_content=_trim(m.content, 1200))
+            lines.append(f"- [{label}] {content} (id {m.id})")
         return "\n".join(lines)
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
