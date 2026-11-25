@@ -375,7 +375,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         lines = [f"## {title}"]
         for m in mems:
             label = m.kind + (f" {m.key}" if m.key else "")
-            lines.append(f"- [{label}] {m.content} (id {m.id})")
+            lines.append(f"- [{label}] {_trim(m.content, 1200)} (id {m.id})")
         return "\n".join(lines)
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
