@@ -32,9 +32,10 @@ _PATTERNS: list[tuple[str, str]] = [
 ]
 _COMPILED = [(re.compile(p, re.I), pid) for p, pid in _PATTERNS]
 
-# Bidirectional controls, word joiner / zero-width space / BOM and the Unicode TAG block hide text from a
-# human reviewer. ZWJ and ZWNJ are left alone: emoji sequences and several scripts need them.
-_INVISIBLE = re.compile("[\u200b\u2060\u2062-\u2064\ufeff\u202a-\u202e\u2066-\u2069\U000e0000-\U000e007f]")
+# Only the characters that rewrite what a human reviewer sees: the bidi OVERRIDE controls (LRO, RLO) and the
+# Unicode TAG block ("ASCII smuggling": invisible text that maps 1:1 onto ASCII). Zero-width space, ZWJ/ZWNJ,
+# isolates and the LRM/RLM marks are left alone because Thai, Khmer, Persian, Hebrew, Arabic and emoji use them.
+_INVISIBLE = re.compile("[\u202d\u202e\U000e0000-\U000e007f]")
 _MAX_SCAN = 65536
 
 
