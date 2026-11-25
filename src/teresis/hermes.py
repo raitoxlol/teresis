@@ -669,13 +669,43 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         return _openai_schemas()
 
+    def _scope_allowed(self, scope: Any) -> bool:
+        """``hermes/<identity>`` is one profile's namespace. Everything outside ``hermes/`` (user, global,
+        project/...) is shared by design. Without this a model could name another profile's scope in a
+        tool argument and read, forge or delete its memories in a shared database."""
+        if not isinstance(scope, str):
+            return False
+        s = scope.strip("/ ")
+        if not s.startswith("hermes/") and s != "hermes":
+            return True
+        return any(s == a or s.startswith(a + "/") for a in self._read_scopes)
+
+    def _tool_scope_error(self, tool_name: str, args: Dict[str, Any]) -> Optional[str]:
+        refused = (f"scope belongs to another Hermes profile; this profile can use `{self._scope}`, "
+                   f"{', '.join(f'`{s}`' for s in self._read_scopes[1:]) or 'no extra scopes'} and shared scopes (user, global, project/...).")
+        if "scope" in args and args["scope"] not in (None, "") and not self._scope_allowed(args["scope"]):
+            return refused
+        mid = args.get("id")
+        if mid and tool_name in {"memory_update", "memory_forget", "memory_feedback", "memory_history"}:
+            row = self._store.get(str(mid)) if self._store else None
+            if row is not None and not self._scope_allowed(row.scope):
+                return refused
+        return None
+
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         if not self._server:
             return json.dumps({"error": "teresis is not initialized"})
         if tool_name in _WRITE_TOOLS and not self._write_enabled:
             return json.dumps({"error": "memory writes are disabled in this agent context (subagent/cron/flush)"})
         try:
-            text, data = self._server.call_tool(tool_name, dict(args or {}))
+            args = dict(args or {})
+            denied = self._tool_scope_error(tool_name, args)
+            if denied:
+                return json.dumps({"error": denied})
+            text, data = self._server.call_tool(tool_name, args)
+            if tool_name == "memory_stats" and isinstance(data, dict) and isinstance(data.get("scopes"), dict):
+                data = {**data, "scopes": {k: v for k, v in data["scopes"].items() if self._scope_allowed(k)}}
+                text = json.dumps(data, indent=2, default=str)
             return json.dumps({"result": text, **(data if isinstance(data, dict) else {"data": data})}, default=str)
         except Exception as exc:
             return json.dumps({"error": str(exc)})
