@@ -90,10 +90,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "memory_forget",
-        "description": "Delete a memory by id, or a keyed slot by scope+key.",
+        "description": "Delete a memory by id, or a keyed slot by scope+key. This is a real delete: the "
+        "text, its older versions and its search entries are removed. Pass hard=false only for a recoverable soft-delete.",
         "inputSchema": {
             "type": "object",
-            "properties": {"id": {"type": "string"}, "scope": _SCOPE, "key": {"type": "string"}},
+            "properties": {"id": {"type": "string"}, "scope": _SCOPE, "key": {"type": "string"},
+                           "hard": {"type": "boolean", "default": True}},
         },
     },
     {
@@ -188,7 +190,7 @@ class Server:
             r = s.update(a["id"], a.get("content"), **changes)
             return f"{r.status}: {r.id}", r.to_dict()
         if name == "memory_forget":
-            n = s.forget(a.get("id"), scope=a.get("scope"), key=a.get("key"))
+            n = s.forget(a.get("id"), scope=a.get("scope"), key=a.get("key"), hard=bool(a.get("hard", True)))
             return f"forgot {n} memor{'y' if n == 1 else 'ies'}", {"forgotten": n}
         if name == "memory_history":
             mems = s.history(a.get("id"), scope=a.get("scope"), key=a.get("key"))
