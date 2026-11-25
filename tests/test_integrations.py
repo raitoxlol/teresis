@@ -618,6 +618,91 @@ class HttpTests(unittest.TestCase):
                 all_text = " ".join(m["content"] for m in s.export())
                 self.assertNotIn("sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456", all_text)
 
+    def test_hermes_import_resolves_profile_templates_and_explicit_override(self):
+        import io
+        from contextlib import redirect_stdout
+        from teresis.cli import main as cli_main
+        from teresis.hermes import import_memories
+
+        for variable in ("$HERMES_HOME", "${HERMES_HOME}"):
+            with self.subTest(variable=variable), tempfile.TemporaryDirectory() as d:
+                home = Path(d) / "profiles" / "work"
+                (home / "memories").mkdir(parents=True)
+                (home / "memories" / "MEMORY.md").write_text("The launch binder is chartreuse.\n")
+                (home / "config.yaml").write_text(
+                    f"plugins:\n  teresis:\n    db_path: '{variable}/work memory.db'\n"
+                )
+                dbp = home / "work memory.db"
+                override = Path(d) / "override memory.db"
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    self.assertEqual(cli_main(["hermes", "import", "--home", str(home), "--dry-run", "--json"]), 0)
+                dry = json.loads(out.getvalue())
+                self.assertEqual((dry["db_path"], dry["scope"], dry["created"]), (str(dbp), "hermes/work", 0))
+                self.assertFalse(dbp.exists())
+                explicit_dry = import_memories(home, db_path=override, dry_run=True)
+                self.assertEqual(explicit_dry["db_path"], str(override))
+                self.assertFalse(override.exists())
+                literal_dry = import_memories(home, db_path="$HERMES_HOME/explicit.db", dry_run=True)
+                self.assertEqual(literal_dry["db_path"], "$HERMES_HOME/explicit.db")
+
+                imported = import_memories(home)
+                self.assertEqual((imported["db_path"], imported["created"]), (str(dbp), 1))
+                explicit = import_memories(home, db_path=override)
+                self.assertEqual((explicit["db_path"], explicit["created"]), (str(override), 1))
+                for db in (dbp, override):
+                    with MemoryStore(db, embedder=None, reranker=None) as store:
+                        hits = store.recall("chartreuse", scope="hermes/work", inherit=False)
+                        self.assertEqual([m.content for m in hits], ["The launch binder is chartreuse."])
+
+    def test_hermes_import_rejects_invalid_config_and_accepts_explicit_relative_db(self):
+        pins = ["relative/file.db", "${HOME}/file.db"]
+        if os.name == "posix":
+            pins.append("~teresis-user-that-does-not-exist/file.db")
+        src = Path(__file__).resolve().parents[1] / "src"
+        for pin in pins:
+            with self.subTest(pin=pin), tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                home = root / "home"
+                profile = home / ".hermes" / "profiles" / "work"
+                (profile / "memories").mkdir(parents=True)
+                (profile / "memories" / "MEMORY.md").write_text("The launch binder is chartreuse.\n")
+                (profile / "config.yaml").write_text(f"plugins:\n  teresis:\n    db_path: '{pin}'\n")
+                env = {**os.environ, "HOME": str(home), "HERMES_HOME": str(profile),
+                       "TERESIS_DB": str(root / "default.db"), "PYTHONPATH": str(src),
+                       "PYTHONDONTWRITEBYTECODE": "1"}
+                command = [sys.executable, "-m", "teresis", "hermes", "import", "--home", str(profile)]
+                result = subprocess.run(command, cwd=root, env=env, capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("Hermes import stopped", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(list(root.rglob("*.db")), [])
+
+                result = subprocess.run([*command, "--db", "chosen.db", "--json"], cwd=root, env=env,
+                                        capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                imported = json.loads(result.stdout)
+                self.assertEqual((imported["db_path"], imported["created"]), ("chosen.db", 1))
+                self.assertTrue((root / "chosen.db").is_file())
+                blocked = root / "blocked"
+                blocked.write_text("not a directory")
+                result = subprocess.run([*command, "--db", str(blocked / "file.db")], cwd=root, env=env,
+                                        capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Hermes import stopped", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_hermes_import_preserves_relative_default_from_environment(self):
+        from unittest.mock import patch
+        from teresis.hermes import import_memories
+
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ, {"TERESIS_DB": "relative-default.db"}):
+            home = Path(d) / "profiles" / "work"
+            home.mkdir(parents=True)
+            dry = import_memories(home, dry_run=True)
+            self.assertEqual(dry["db_path"], "relative-default.db")
+            self.assertEqual(dry["created"], 0)
+
     def test_cli_db_and_json_after_subcommand(self):
         import io
         from contextlib import redirect_stdout

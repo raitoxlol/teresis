@@ -90,6 +90,71 @@ class SetupTests(unittest.TestCase):
         self.assertFalse(next(c["ok"] for c in run_doctor(db, home=self.home)["checks"]
                               if c["name"] == "client:hermes"))
 
+    def test_general_setup_preserves_existing_hermes_install(self):
+        from teresis.hermes import install
+
+        h = self.home / ".hermes"
+        h.mkdir()
+        config = h / "config.yaml"
+        config.write_bytes(b"memory:\n  provider: existing\n")
+        dest = install(h, link=True)
+        link = dest / "teresis"
+        original = os.readlink(link)
+        before = config.read_bytes()
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run):
+                result = setup(self.home, db=self.home / "shared.db", only=["hermes"], dry_run=dry_run)[0]
+                self.assertEqual(result["status"], "partial")
+                self.assertTrue(link.is_symlink())
+                self.assertEqual(os.readlink(link), original)
+                self.assertEqual(config.read_bytes(), before)
+                self.assertIn("unchanged", result["detail"])
+
+    def test_general_setup_preserves_native_hermes_install(self):
+        h = self.home / ".hermes"
+        dest = h / "plugins" / "teresis"
+        dest.mkdir(parents=True)
+        config = h / "config.yaml"
+        config.write_bytes(b"memory:\n  provider: native\n")
+        files = {"__init__.py": b"# native plugin\n", "plugin.yaml": b"name: native\n"}
+        for name, content in files.items():
+            (dest / name).write_bytes(content)
+        before = config.read_bytes()
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run):
+                result = setup(self.home, db=self.home / "shared.db", only=["hermes"], dry_run=dry_run)[0]
+                self.assertEqual(result["status"], "partial")
+                for name, content in files.items():
+                    self.assertEqual((dest / name).read_bytes(), content)
+                self.assertFalse((dest / "teresis").exists())
+                self.assertEqual(config.read_bytes(), before)
+                self.assertIn("unchanged", result["detail"])
+
+    def test_general_setup_preserves_dangling_hermes_plugin_link(self):
+        dest = self.home / ".hermes" / "plugins" / "teresis"
+        dest.parent.mkdir(parents=True)
+        dest.symlink_to("missing-plugin", target_is_directory=True)
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run):
+                result = setup(self.home, db=self.home / "shared.db", only=["hermes"], dry_run=dry_run)[0]
+                self.assertEqual(result["status"], "partial")
+                self.assertTrue(dest.is_symlink())
+                self.assertEqual(os.readlink(dest), "missing-plugin")
+                self.assertIn("unchanged, not verified", result["detail"])
+
+    def test_general_setup_refuses_symlinked_hermes_plugin_root(self):
+        h = self.home / ".hermes"
+        h.mkdir()
+        target = self.home / "plugin-target"
+        target.mkdir()
+        (h / "plugins").symlink_to(target, target_is_directory=True)
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run):
+                result = setup(self.home, db=self.home / "shared.db", only=["hermes"], dry_run=dry_run)[0]
+                self.assertEqual(result["status"], "failed")
+                self.assertIn("symlinked Hermes plugin directory", result["detail"])
+                self.assertEqual(list(target.iterdir()), [])
+
     def test_setup_pins_two_real_mcp_processes_to_the_same_database(self):
         pinned = self.home / "shared dir" / "service 🪴.db"
         unrelated = self.home / "wrong.db"

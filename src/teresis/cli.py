@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 import tempfile
 
@@ -207,15 +208,20 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     print(f"{res['status']}: Teresis for Hermes profile {res['profile']} → {res['db']}")
                     if not args.dry_run:
-                        print("Start a new Hermes session and check `hermes memory status` for that profile.")
+                        print(f"Check: hermes --profile {shlex.quote(res['profile'])} memory status")
+                        print("Start a new Hermes session to use Teresis.")
                 return 0
             if args.profile or args.dry_run or args.db:
                 p.error("--profile, --dry-run and --db apply to hermes install --activate")
             dest = install(home, link=args.link)
             print(f"installed teresis provider at {dest}\nactivate: hermes config set memory.provider teresis")
             return 0
-        res = import_memories(home, db_path=args.db, scope=args.scope, user_scope=args.user_scope,
-                              dry_run=args.dry_run)
+        try:
+            res = import_memories(home, db_path=args.db, scope=args.scope, user_scope=args.user_scope,
+                                  dry_run=args.dry_run)
+        except (OSError, ValueError) as exc:
+            print(f"Teresis Hermes import stopped: {exc}", file=sys.stderr)
+            return 1
         if args.json:
             print(json.dumps(res, indent=2))
         else:
