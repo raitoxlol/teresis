@@ -62,6 +62,8 @@ _WRAPPER_HEAD = re.compile(
     r"|this session is being continued"
     r"|(?:the following is )?a summary of (?:the )?(?:prior|previous|earlier) (?:conversation|context)"
     r"|(?:scheduled|cron) (?:job|task|run)\b"
+    # Gateway notices that arrive as user turns, e.g. "✔ [default] Kanban t_ab12cd34 done".
+    r"|[\u2714\u2716\u23f8\u26a0\u2705\u274c]\ufe0f?\s*\[[^\]]{1,40}\]"
     r")",
     re.I,
 )
