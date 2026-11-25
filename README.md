@@ -318,8 +318,8 @@ server entry. Updating and checking an existing Codex TOML config requires Pytho
 optional `tomli` on Python 3.10.
 
 The general `setup` installs Hermes provider files only and reports partial rather than silently
-switching a profile. Use the explicit profile command below to select Teresis and pin the same
-absolute database. Setup exits
+switching a profile. It leaves an existing Hermes plugin directory or development link unchanged.
+Use the explicit profile command below to select Teresis and pin the same absolute database. Setup exits
 nonzero if any selected client failed or is partial. Use `--only claude-code,cursor,codex` for
 desktop MCP wiring alone.
 
