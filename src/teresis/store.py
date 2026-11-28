@@ -230,6 +230,7 @@ class MemoryStore:
             c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA synchronous=NORMAL")
         c.execute("PRAGMA foreign_keys=ON")
+        c.execute("PRAGMA secure_delete=ON")  # deleted pages are zeroed, not just unlinked
         c.execute("PRAGMA busy_timeout=30000")
         with self._lock:  # executescript manages its own transaction
             c.executescript(f"BEGIN IMMEDIATE;{SCHEMA}PRAGMA user_version={SCHEMA_VERSION};COMMIT;")
@@ -460,19 +461,52 @@ class MemoryStore:
 
     def forget(self, memory_id: str | None = None, *, scope: str | None = None, key: str | None = None,
                hard: bool = False) -> int:
-        """Soft-delete (default) or hard-delete by id, or by scope+key. Returns rows affected."""
+        """Soft-delete (default) or hard-delete by id, or by scope+key. Returns rows affected.
+
+        A hard delete is a real delete: the row, every older version it replaced, its vectors, its
+        search-index entries and any entity that only it mentioned are removed, and the freed pages
+        are zeroed and the WAL emptied (best effort when another connection holds a read lock).
+        """
         if memory_id:
             where, params = "id=?", [memory_id]
         elif scope and key:
             where, params = "scope=? AND key=?", [scope.strip("/"), key]
         else:
             raise ValueError("forget needs an id, or scope and key")
+        if not hard:
+            with self._write() as c:
+                return c.execute(
+                    f"UPDATE memories SET deleted_at=? WHERE {where} AND deleted_at IS NULL", [self.clock(), *params]
+                ).rowcount
         with self._write() as c:
-            if hard:
-                return c.execute(f"DELETE FROM memories WHERE {where}", params).rowcount
-            return c.execute(
-                f"UPDATE memories SET deleted_at=? WHERE {where} AND deleted_at IS NULL", [self.clock(), *params]
-            ).rowcount
+            ids = [r[0] for r in c.execute(f"SELECT id FROM memories WHERE {where}", params)]
+            seen = set(ids)
+            frontier = list(ids)
+            while frontier:  # older versions this row replaced, transitively
+                marks = ",".join("?" * len(frontier))
+                frontier = [r[0] for r in c.execute(
+                    f"SELECT id FROM memories WHERE superseded_by IN ({marks})", frontier) if r[0] not in seen]
+                seen.update(frontier)
+            n = 0
+            doomed = list(seen)
+            for i in range(0, len(doomed), 500):
+                chunk = doomed[i:i + 500]
+                n += c.execute(f"DELETE FROM memories WHERE id IN ({','.join('?' * len(chunk))})", chunk).rowcount
+            c.execute("DELETE FROM entities WHERE NOT EXISTS (SELECT 1 FROM memory_entities me WHERE me.entity_key=entities.key)")
+        if n:
+            self._scrub_indexes()
+        return n
+
+    def _scrub_indexes(self) -> None:
+        """Rewrite the FTS segments and empty the WAL so deleted text does not linger on disk."""
+        try:
+            with self._write() as c:
+                c.execute("INSERT INTO memories_fts(memories_fts) VALUES ('optimize')")
+                c.execute("INSERT INTO memories_tri(memories_tri) VALUES ('optimize')")
+            with self._lock:
+                self._conn.execute("PRAGMA wal_checkpoint(" + "TRUNC" + "ATE)")
+        except sqlite3.Error as exc:  # best effort: the delete itself already committed
+            log.warning("could not scrub indexes after hard delete: %s", exc)
 
     # ------------------------------------------------------------------ read
     def get(self, memory_id: str) -> Memory | None:
