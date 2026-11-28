@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, Mapping
 
+from . import threats as _threats
 from .extract import EXTRACT_SOURCES, _BLOCK_MARKERS, _MEMORY_BLOCK, _SYSTEM_SENTENCE
 
 # --------------------------------------------------------------------------- origins
@@ -173,6 +174,8 @@ def injectable(kind: str, content: str, meta: Any, source: str | None) -> tuple[
     """May this row be put in a prompt as a standing fact? Applies to promoted rows too."""
     if is_candidate(kind):
         return False, "candidate"
+    if _threats.first_threat(content or ""):
+        return False, "threat"  # instruction-shaped text is never put in a prompt, whoever wrote it
     origin = effective_origin(meta, source, kind)
     m = _as_meta(meta)
     if kind == "episode":

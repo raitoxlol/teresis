@@ -33,6 +33,7 @@ from . import extract as _extract
 from . import provenance as _prov
 from . import review as _review
 from . import secrets as _secrets
+from . import threats as _threats
 from .mcp import TOOLS, Server
 from .store import MemoryStore, default_db_path
 from .text import containment, term_set, tokens
@@ -546,6 +547,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         """
         saved = []
         for c in _extract.extract(text):
+            if _threats.first_threat(c.content):
+                continue  # an instruction aimed at the agent is not a fact about the user
             scope = "user" if c.kind == "preference" else self._scope
             try:
                 ok = (self._store_explicit(c, scope, source) if (human and c.explicit)
@@ -600,6 +603,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             prev = _secrets.redact_secrets(prev)[0]
         if content:
             content = _secrets.redact_secrets(content)[0]
+        if action in ("add", "replace") and content and _threats.first_threat(content):
+            return  # Hermes' own scanner normally stops this first; never mirror it if it slips through
         try:
             if action == "add" and content:
                 self._write_or_skip(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool",
