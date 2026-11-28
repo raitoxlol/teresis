@@ -34,10 +34,11 @@ from . import provenance as _prov
 from . import review as _review
 from . import secrets as _secrets
 from . import threats as _threats
-from .evidence import ITEM_CHARS, EvidencePacket
+from . import evidence as _evidence
+from .evidence import ITEM_CHARS
 from .mcp import TOOLS, Server, why_reply
 from .store import MemoryStore, default_db_path
-from .text import containment, estimate_tokens, term_set, tokens
+from .text import containment, term_set
 
 log = logging.getLogger("teresis.hermes")
 
@@ -51,10 +52,7 @@ except Exception:  # pragma: no cover - lets the module import (and be tested) w
 try:
     from agent.memory_provider import is_trivial_prompt as _is_trivial
 except Exception:
-    def _is_trivial(text: Optional[str]) -> bool:
-        t = (text or "").strip().lower().strip("!?. ")
-        return not t or t.startswith("/") or t in {"ok", "okay", "yes", "no", "thanks", "thank you", "hi", "hey",
-                                                    "continue", "go ahead", "do it", "done", "next", "lgtm", "k"}
+    _is_trivial = _evidence.is_trivial
 
 PLUGIN_KEY = "teresis"
 _NO_WRITE_CONTEXTS = {"subagent", "cron", "flush"}
@@ -233,59 +231,11 @@ def _trim(text: str, n: int) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def _fit_note(lines: List[str], budget: int) -> str:
-    """Render a ``[title, head, *items, tail]`` note within ``budget`` estimated tokens.
-
-    Items are dropped from the end first (with a count of what was left out), and the
-    title, head and tail stay. A budget too small even for that gets a hard cut.
-    """
-    if not lines or budget <= 0:
-        return ""
-    head, items, tail = lines[:2], lines[2:-1], lines[-1:]
-    text = ""
-    for n in range(len(items), -1, -1):
-        more = [f"- ... {len(items) - n} more not shown"] if n < len(items) else []
-        text = "\n".join(head + items[:n] + more + tail)
-        if estimate_tokens(text) <= budget:
-            return text
-    cap = 4 * budget  # estimate_tokens(t) <= budget exactly when len(t) <= 4 * budget
-    return text if len(text) <= cap else text[: cap - 1] + "…"
-
-
-# Unstemmed tokens that are too common to justify injecting a memory on their own.
-# Inflected forms are included so "likes" does not sneak past "like".
-_PREFETCH_WEAK = frozenset(
-    t + suffix
-    for t in """like want need order get make use have take give please help really just more some also
-    thing things stuff good bad new one user call write read file run set put see look time day
-    way work said first later check about would could should done yeah yes okay thanks something
-    anything remotely table place can""".split()
-    for suffix in ("", "s", "es", "ed", "ing")
-)
-
-
-def _term_covers(query_tok: str, memory_tok: str) -> bool:
-    """True when the memory token is the query token or a light inflection of it.
-
-    Query "rolls" does not cover memory "roll". That direction is how lexical
-    search pulled "roll back" into a tuna-rolls turn.
-    """
-    if query_tok == memory_tok:
-        return True
-    if len(query_tok) < 4 or not memory_tok.startswith(query_tok):
-        return False
-    return memory_tok[len(query_tok):] in {"s", "es", "ed", "ing", "d"}
-
-
-def _prefetch_relevant(query: str, content: str, *, floor: float, score: float | None) -> bool:
-    """Prefetch injection gate. Tool recall does not use this."""
-    if (score or 0) < floor:
-        return False
-    distinctive = [t for t in tokens(query) if len(t) >= 4 and t not in _PREFETCH_WEAK]
-    if not distinctive:
-        return False
-    memory_toks = [t for t in tokens(content) if t not in _PREFETCH_WEAK]
-    return any(_term_covers(q, m) for q in distinctive for m in memory_toks)
+# The packet builder and its relevance gate live in evidence.py; these names stay for callers.
+_fit_note = _evidence.fit_note
+_PREFETCH_WEAK = _evidence.PREFETCH_WEAK
+_term_covers = _evidence.term_covers
+_prefetch_relevant = _evidence.prefetch_relevant
 
 
 def _min_score(config: Dict[str, Any], default: float = 0.45) -> float:
@@ -318,6 +268,9 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._identity = ""
         self._last_ids: List[str] = []
         self._prev_ids: List[str] = []
+        self._last_reasons: Dict[str, str] = {}  # id -> why it was injected (from the packet's reason codes)
+        self._prev_reasons: Dict[str, str] = {}
+        self._last_packet: Optional[_evidence.Packet] = None
         self._turn_human = False
         self._turn_author = ""
         self._review_note = ""
@@ -433,6 +386,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
     def on_turn_start(self, turn_number: int, message: str, **kwargs) -> None:
         try:
             self._prev_ids, self._last_ids = self._last_ids, []
+            self._prev_reasons, self._last_reasons = self._last_reasons, {}
             self._set_review_note([])
             author_id = kwargs.get("author_id")
             author_name = kwargs.get("author_name")
@@ -479,66 +433,45 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         except Exception as exc:
             log.debug("teresis on_turn_start failed: %s", exc)
 
+    def packet_options(self, *, explain: bool = False) -> "_evidence.PacketOptions":
+        return _evidence.PacketOptions(min_score=_min_score(self._config),
+                                       linked=_truthy(self._config['prefetch_linked']),
+                                       episodes=_truthy(self._config['capture_turns']), explain=explain)
+
+    def build_packet(self, query: str, *, explain: bool = False) -> "_evidence.Packet":
+        """The packet prefetch injects for ``query`` with this profile's settings. Read-only.
+        Raises on a missing store or a non-integer ``prefetch_k`` / ``prefetch_budget_tokens``."""
+        if not self._store:
+            raise RuntimeError("teresis is not initialized")
+        return _evidence.build_packet(self._store, query, self._read_scopes,
+                                      limit=int(self._config['prefetch_k']),
+                                      budget=int(self._config['prefetch_budget_tokens']),
+                                      options=self.packet_options(explain=explain),
+                                      lead=self._review_lines, trivial=_is_trivial)
+
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         self._last_count = 0
         self._last_ids = []
+        self._last_reasons = {}
+        self._last_packet = None
         try:
             budget = int(self._config['prefetch_budget_tokens'])
         except (TypeError, ValueError):
             budget = int(DEFAULTS['prefetch_budget_tokens'])
         # The review note is the head of the packet, so the budget covers it too.
         note = _fit_note(self._review_lines, budget)
-        if not self._store or _is_trivial(query):
+        if not self._store:
             return note
         try:
-            k = min(30, int(self._config['prefetch_k']))
-            packet = EvidencePacket(k, int(self._config['prefetch_budget_tokens']), text=note)
-            if packet.full:
-                return note
-            query = _secrets.redact_secrets(query)[0]
-            floor = _min_score(self._config)
-            direct = self._store.recall(query, scope=self._read_scopes, k=min(60, max(12, 3*k)),
-                                        exclude_kinds=['episode', _prov.CANDIDATE_KIND], touch=False, expand_entities=False)
-            anchors = []
-            for m in direct:
-                if packet.full:
-                    break
-                if (_prefetch_relevant(query, m.content, floor=floor, score=m.score)
-                        and _prov.injectable(m.kind, m.content, m.meta, m.source)[0]
-                        and packet.add(m, 'Long-term memory (teresis)')):
-                    anchors.append(m)
-            if not packet.full and self._store.w.entity_hop > 0 and _truthy(self._config['prefetch_linked']):
-                for anchor in anchors[:3]:
-                    linked = False
-                    for peer in self._store.unique_peers(anchor):
-                        if (_prov.injectable(peer.kind, peer.content, peer.meta, peer.source)[0]
-                                and packet.add(peer, 'Related facts (shared entity)', via=anchor.id)):
-                            anchors.append(peer)
-                            linked = True
-                            break
-                    if linked:
-                        break
-            if not packet.full and _truthy(self._config['capture_turns']):
-                episodes = self._store.recall(query, scope=[self._scope], inherit=False, kinds=['episode'],
-                                              k=8, touch=False, expand_entities=False)
-                # Deduplicate against all accepted facts, including a linked fact.
-                known = [' '.join(m.content.casefold().split()).removeprefix('user: ') for m in anchors]
-                accepted = 0
-                for m in episodes:
-                    if packet.full or accepted >= 2:
-                        break
-                    body = ' '.join(m.content.casefold().split())
-                    if (_prov.injectable(m.kind, m.content, m.meta, m.source)[0]
-                            and _prefetch_relevant(query, m.content, floor=max(0.3, floor), score=m.score)
-                            and not any(k and k in body for k in known)
-                            and packet.add(m, 'Related past conversation')):
-                        accepted += 1
-            self._last_count = len(packet.ids)
-            self._last_ids = sorted(packet.ids)
-            return packet.text
+            packet = self.build_packet(query)
         except Exception as exc:
             log.debug("teresis prefetch failed: %s", exc)
             return note
+        self._last_packet = packet
+        self._last_count = len(packet.memories)
+        self._last_ids = packet.ids
+        self._last_reasons = {it.id: _evidence.injected_note(it) for it in packet.memories}
+        return packet.text
 
     def recall_status(self):
         if not self._last_count or _RecallStatus is None:
@@ -896,7 +829,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         if not this_ids and not prev_ids:
             return json.dumps({"result": "Nothing was injected from memory in this or the previous "
                                          "turn. Pass an id from memory_recall."})
-        text, data = why_reply(self._store, [("This turn", this_ids), ("Previous turn", prev_ids)])
+        notes = {**self._prev_reasons, **self._last_reasons}
+        text, data = why_reply(self._store, [("This turn", this_ids), ("Previous turn", prev_ids)], notes=notes)
         return json.dumps({"result": text, **data}, default=str)
 
     def _scope_allowed(self, scope: Any) -> bool:

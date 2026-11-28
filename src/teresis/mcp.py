@@ -184,12 +184,14 @@ def _clip_receipt(r: dict) -> dict:
     return out
 
 
-def why_reply(store: MemoryStore, groups: list[tuple[str, list[str]]]) -> tuple[str, dict]:
+def why_reply(store: MemoryStore, groups: list[tuple[str, list[str]]],
+              notes: dict[str, str] | None = None) -> tuple[str, dict]:
     """memory_why text and data for ``(label, ids)`` groups, bounded like other tool replies.
 
     Each text field is clipped to MAX_TOOL_ITEM_CHARS. Receipts and missing ids stop at
     MAX_TOOL_OUTPUT_CHARS of JSON (``omitted`` counts the rest), and the text is cut at
-    MAX_TOOL_OUTPUT_CHARS. A group with a label is rendered under ``<label>:``.
+    MAX_TOOL_OUTPUT_CHARS. A group with a label is rendered under ``<label>:``. ``notes``
+    (id -> why the packet injected it) adds a text line per receipt; the data keys are unchanged.
     """
     from . import receipt as _receipt
 
@@ -212,7 +214,7 @@ def why_reply(store: MemoryStore, groups: list[tuple[str, list[str]]]) -> tuple[
             (shown if isinstance(item, dict) else gone).append(item)
         if not shown and not gone:
             continue
-        text = _receipt.render(shown, gone)
+        text = _receipt.render(shown, gone, {k: _clip(v) for k, v in (notes or {}).items()})
         sections.append(f"{label}:\n{text}" if label else text)
         receipts += shown
         missing += gone

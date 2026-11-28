@@ -862,6 +862,17 @@ class MemoryStore:
         scored.sort(key=lambda m: m.score or 0, reverse=True)
         return scored
 
+    def lexical_matches(self, query: str, *, limit: int = 50) -> list[Memory]:
+        """Rows the word index matches for ``query`` in any scope and any state (superseded,
+        forgotten, expired, candidate), best first. Read-only; explains what recall left out."""
+        fq = T.fts_query(query or "")
+        if not fq or limit <= 0:
+            return []
+        rows = self._q("SELECT m.* FROM memories_fts f JOIN memories m ON m.rowid=f.rowid "
+                       "WHERE memories_fts MATCH ? ORDER BY bm25(memories_fts, 1.0, 0.6, 1.5), m.id LIMIT ?",
+                       [fq, limit])
+        return [Memory.from_row(r) for r in rows]
+
     def _rerank(self, query: str, mems: list[Memory], explain: bool) -> list[Memory]:
         w = self.w
         pool = max(2, w.rerank_pool)
