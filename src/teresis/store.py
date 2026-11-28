@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import sqlite3
+from urllib.parse import quote
 import threading
 import time
 import uuid
@@ -111,15 +112,21 @@ def _read_user_version(conn: sqlite3.Connection) -> int:
     return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
 
-def _ensure_openable(conn: sqlite3.Connection) -> None:
+def _newer_schema_error(found: int) -> sqlite3.DatabaseError:
+    return sqlite3.DatabaseError(
+        f"teresis database schema version {found} is newer than this build supports "
+        f"(supported up to {SCHEMA_VERSION}); refusing to open to avoid downgrading it"
+    )
+
+
+def _ensure_openable(conn: sqlite3.Connection) -> int:
     """Refuse to open a store written by a newer teresis: proceeding would run
-    this build's schema/DDL against it and silently relabel a newer file."""
+    this build's schema/DDL against it and silently relabel a newer file.
+    Returns the stored schema version."""
     found = _read_user_version(conn)
     if found > SCHEMA_VERSION:
-        raise sqlite3.DatabaseError(
-            f"teresis database schema version {found} is newer than this build supports "
-            f"(supported up to {SCHEMA_VERSION}); refusing to open to avoid downgrading it"
-        )
+        raise _newer_schema_error(found)
+    return found
 
 
 def _execute_schema(conn: sqlite3.Connection, schema: str) -> None:
@@ -237,6 +244,7 @@ class MemoryStore:
         reranker: _embed.Reranker | None | str = "env",
         weights: Weights | None = None,
         clock=time.time,
+        busy_timeout: float = 30.0,
     ):
         self.path = Path(path) if path is not None else default_db_path()
         if str(self.path) != ":memory:":
@@ -251,24 +259,104 @@ class MemoryStore:
                 log.warning("ignoring bad TERESIS_WEIGHTS: %s", exc)
         self.clock = clock
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(str(self.path), isolation_level=None, check_same_thread=False, timeout=30)
-        self._conn.row_factory = sqlite3.Row
-        try:
-            _ensure_openable(self._conn)  # reject a newer schema before any write/WAL/DDL
-            if str(self.path) != ":memory:":
-                self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA synchronous=NORMAL")
-            self._conn.execute("PRAGMA foreign_keys=ON")
-            self._conn.execute("PRAGMA busy_timeout=30000")
-            with self._write() as c:
-                _ensure_openable(c)  # re-check under the same lock/transaction as DDL and stamp
-                _execute_schema(c, SCHEMA)
-                c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-        except BaseException:
-            self._conn.close()
-            raise
+        self._busy = max(0.0, float(busy_timeout))
+        self.read_only = False
+        self._ident: tuple[int, int] | None = None
+        self._open()
 
     # ------------------------------------------------------------------ infra
+    def _file_ident(self) -> tuple[int, int] | None:
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            return None
+        return (st.st_dev, st.st_ino)
+
+    def _connect(self, *, immutable: bool = False) -> sqlite3.Connection:
+        if immutable:
+            uri = f"file:{quote(str(self.path))}?mode=ro&immutable=1"
+            c = sqlite3.connect(uri, uri=True, isolation_level=None, check_same_thread=False, timeout=self._busy)
+        else:
+            c = sqlite3.connect(str(self.path), isolation_level=None, check_same_thread=False, timeout=self._busy)
+        c.row_factory = sqlite3.Row
+        return c
+
+    def _open(self) -> None:
+        """Open the database. A current-schema file takes no write lock, so a busy writer cannot stall
+        startup, and a file or directory that cannot be written still serves recall (read-only).
+        A file stamped by a newer teresis is refused before any pragma, DDL or stamp touches it,
+        on every path (first open, read-only fallback, reopen after a replace)."""
+        memory = str(self.path) == ":memory:"
+        c = self._connect()
+        try:
+            version = _ensure_openable(c)  # reject a newer schema before any write/WAL/DDL
+            if not memory:
+                try:
+                    c.execute("PRAGMA journal_mode=WAL")
+                except sqlite3.OperationalError:
+                    pass  # read-only file or directory: keep whatever mode it has
+            c.execute("PRAGMA synchronous=NORMAL")
+            c.execute("PRAGMA foreign_keys=ON")
+            c.execute("PRAGMA secure_delete=ON")  # deleted pages are zeroed, not just unlinked
+            c.execute(f"PRAGMA busy_timeout={int(self._busy * 1000)}")
+            if version != SCHEMA_VERSION:
+                with self._lock:
+                    c.execute("BEGIN IMMEDIATE")
+                    try:
+                        _ensure_openable(c)  # re-check under the same lock/transaction as DDL and stamp
+                        _execute_schema(c, SCHEMA)
+                        c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                    except BaseException:
+                        if c.in_transaction:
+                            c.execute("ROLLBACK")
+                        raise
+                    c.execute("COMMIT")
+            else:
+                try:
+                    c.execute("SELECT 1 FROM memories LIMIT 1").fetchall()  # also proves the file is readable here
+                except sqlite3.OperationalError:
+                    raise
+                except sqlite3.DatabaseError as exc:  # damaged pages: stay up, every call reports the damage
+                    log.warning("teresis database %s looks damaged (%s); continuing, run `teresis doctor`", self.path, exc)
+            self._conn = c
+            self.read_only = False
+        except sqlite3.OperationalError as exc:
+            c.close()
+            msg = str(exc).lower()
+            if memory or not self.path.exists() or not ("readonly" in msg or "unable to open" in msg or "read-only" in msg):
+                raise
+            # The file exists but cannot be written (or its -shm cannot be created): serve reads only.
+            ro = self._connect(immutable=True)
+            try:
+                found = _read_user_version(ro)
+                if found <= SCHEMA_VERSION:
+                    ro.execute("SELECT 1 FROM memories LIMIT 1").fetchall()
+            except sqlite3.Error:
+                ro.close()
+                raise exc
+            if found > SCHEMA_VERSION:  # read-only does not make a newer file safe to read
+                ro.close()
+                raise _newer_schema_error(found)
+            log.warning("teresis database %s is not writable; recall works, writes are refused", self.path)
+            self._conn = ro
+            self.read_only = True
+        except BaseException:
+            c.close()
+            raise
+        self._ident = None if memory else self._file_ident()
+
+    def _ensure_fresh(self) -> None:
+        """Follow the path: if the file was deleted or replaced (restore, manual move), reopen it."""
+        if self._ident is None or self.read_only:
+            return
+        if self._file_ident() != self._ident:
+            log.warning("teresis database %s was removed or replaced; reopening", self.path)
+            try:
+                self._conn.close()
+            except sqlite3.Error:
+                pass
+            self._open()
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
@@ -282,6 +370,9 @@ class MemoryStore:
     @contextmanager
     def _write(self) -> Iterator[sqlite3.Connection]:
         with self._lock:
+            if self.read_only:
+                raise sqlite3.OperationalError("memory database is read-only (its file or directory is not writable)")
+            self._ensure_fresh()
             self._conn.execute("BEGIN IMMEDIATE")
             try:
                 yield self._conn
@@ -293,6 +384,7 @@ class MemoryStore:
 
     def _q(self, sql: str, params: Sequence[Any] = ()) -> list[sqlite3.Row]:
         with self._lock:
+            self._ensure_fresh()
             return self._conn.execute(sql, params).fetchall()
 
     def _active_sql(self, alias: str = "m", as_of: float | None = None) -> tuple[str, list[Any]]:
@@ -494,19 +586,52 @@ class MemoryStore:
 
     def forget(self, memory_id: str | None = None, *, scope: str | None = None, key: str | None = None,
                hard: bool = False) -> int:
-        """Soft-delete (default) or hard-delete by id, or by scope+key. Returns rows affected."""
+        """Soft-delete (default) or hard-delete by id, or by scope+key. Returns rows affected.
+
+        A hard delete is a real delete: the row, every older version it replaced, its vectors, its
+        search-index entries and any entity that only it mentioned are removed, and the freed pages
+        are zeroed and the WAL emptied (best effort when another connection holds a read lock).
+        """
         if memory_id:
             where, params = "id=?", [memory_id]
         elif scope and key:
             where, params = "scope=? AND key=?", [scope.strip("/"), key]
         else:
             raise ValueError("forget needs an id, or scope and key")
+        if not hard:
+            with self._write() as c:
+                return c.execute(
+                    f"UPDATE memories SET deleted_at=? WHERE {where} AND deleted_at IS NULL", [self.clock(), *params]
+                ).rowcount
         with self._write() as c:
-            if hard:
-                return c.execute(f"DELETE FROM memories WHERE {where}", params).rowcount
-            return c.execute(
-                f"UPDATE memories SET deleted_at=? WHERE {where} AND deleted_at IS NULL", [self.clock(), *params]
-            ).rowcount
+            ids = [r[0] for r in c.execute(f"SELECT id FROM memories WHERE {where}", params)]
+            seen = set(ids)
+            frontier = list(ids)
+            while frontier:  # older versions this row replaced, transitively
+                marks = ",".join("?" * len(frontier))
+                frontier = [r[0] for r in c.execute(
+                    f"SELECT id FROM memories WHERE superseded_by IN ({marks})", frontier) if r[0] not in seen]
+                seen.update(frontier)
+            n = 0
+            doomed = list(seen)
+            for i in range(0, len(doomed), 500):
+                chunk = doomed[i:i + 500]
+                n += c.execute(f"DELETE FROM memories WHERE id IN ({','.join('?' * len(chunk))})", chunk).rowcount
+            c.execute("DELETE FROM entities WHERE NOT EXISTS (SELECT 1 FROM memory_entities me WHERE me.entity_key=entities.key)")
+        if n:
+            self._scrub_indexes()
+        return n
+
+    def _scrub_indexes(self) -> None:
+        """Rewrite the FTS segments and empty the WAL so deleted text does not linger on disk."""
+        try:
+            with self._write() as c:
+                c.execute("INSERT INTO memories_fts(memories_fts) VALUES ('optimize')")
+                c.execute("INSERT INTO memories_tri(memories_tri) VALUES ('optimize')")
+            with self._lock:
+                self._conn.execute("PRAGMA wal_checkpoint(" + "TRUNC" + "ATE)")
+        except sqlite3.Error as exc:  # best effort: the delete itself already committed
+            log.warning("could not scrub indexes after hard delete: %s", exc)
 
     # ------------------------------------------------------------------ read
     def get(self, memory_id: str) -> Memory | None:
@@ -806,14 +931,22 @@ class MemoryStore:
     def _touch(self, ids: list[str]) -> None:
         if not ids:
             return
-        try:
-            with self._write() as c:
-                c.executemany(
-                    "UPDATE memories SET access_count=access_count+1, accessed_at=? WHERE id=?",
-                    [(self.clock(), i) for i in ids],
-                )
-        except sqlite3.OperationalError as exc:  # reads must not fail because a writer is busy
-            log.debug("touch skipped: %s", exc)
+        with self._lock:
+            # Bookkeeping must never make a read wait for another writer.
+            self._conn.execute("PRAGMA busy_timeout=0")
+            try:
+                with self._write() as c:
+                    c.executemany(
+                        "UPDATE memories SET access_count=access_count+1, accessed_at=? WHERE id=?",
+                        [(self.clock(), i) for i in ids],
+                    )
+            except sqlite3.DatabaseError as exc:  # reads must not fail because a writer is busy or the file is damaged
+                log.debug("touch skipped: %s", exc)
+            finally:
+                try:
+                    self._conn.execute(f"PRAGMA busy_timeout={int(self._busy * 1000)}")
+                except sqlite3.Error:
+                    pass
 
     def context(self, scope: str | Sequence[str] = "global", *, query: str = "", budget_tokens: int = 1200,
                 exclude_kinds: Sequence[str] = ("episode", "candidate")) -> str:
@@ -1140,6 +1273,7 @@ class MemoryStore:
         n = 0
         with self._write() as c:
             for d in records:
+                d = {**d, "content": _secrets.redact_secrets(str(d["content"]))[0]}  # never restore a raw credential
                 tags = d.get("tags") or []
                 c.execute(
                     "INSERT OR IGNORE INTO memories (id, scope, kind, key, content, tags, meta, source, importance,"

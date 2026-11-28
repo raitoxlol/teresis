@@ -8,6 +8,7 @@ import re
 import unittest
 from unittest.mock import patch
 
+from teresis import temporal
 from teresis.hermes import TeresisMemoryProvider
 from teresis.text import estimate_tokens
 
@@ -165,6 +166,23 @@ class PacketTests(unittest.TestCase):
         self.assertEqual(p.prefetch(ASK), header + line)
         p._config["prefetch_budget_tokens"] = exact - 1
         self.assertEqual(p.prefetch(ASK), "")
+
+    def test_budget_counts_saved_date_note_and_trim(self):
+        p = self.provider()
+        p._store.clock = lambda: 1_700_000_000.0
+        mid = self.remember(p, "Billing owner review is tomorrow " + "detail " * 400)
+        query = "billing owner review"
+        text = p.prefetch(query)
+        self.assertIn(mid, text)
+        self.assertIn(temporal.saved_note(1_700_000_000.0), text)  # anchors "tomorrow"
+        self.assertIn("…", text)  # 1200-character trim
+        self.assertLess(len(text), 1400)
+        exact = estimate_tokens(text)
+        self.assertLessEqual(exact, 700)
+        p._config["prefetch_budget_tokens"] = exact
+        self.assertEqual(p.prefetch(query), text)
+        p._config["prefetch_budget_tokens"] = exact - 1
+        self.assertEqual(p.prefetch(query), "")
 
     def test_oversized_hit_backfills_eligible_candidate(self):
         p = self.provider()

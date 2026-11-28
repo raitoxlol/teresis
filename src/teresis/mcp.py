@@ -7,6 +7,8 @@ import sys
 from typing import Any, Callable, TextIO
 
 from . import __version__
+from . import temporal as _temporal
+from . import threats as _threats
 from .store import MemoryStore
 
 SUPPORTED = ("2025-06-18", "2025-03-26", "2024-11-05")
@@ -91,10 +93,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "memory_forget",
-        "description": "Delete a memory by id, or a keyed slot by scope+key.",
+        "description": "Delete a memory by id, or a keyed slot by scope+key. This is a real delete: the "
+        "text, its older versions and its search entries are removed. Pass hard=false only for a recoverable soft-delete.",
         "inputSchema": {
             "type": "object",
-            "properties": {"id": {"type": "string"}, "scope": _SCOPE, "key": {"type": "string"}},
+            "properties": {"id": {"type": "string"}, "scope": _SCOPE, "key": {"type": "string"},
+                           "hard": {"type": "boolean", "default": True}},
         },
     },
     {
@@ -149,6 +153,29 @@ for _t in TOOLS:
     _t["annotations"] = {"readOnlyHint": _t["name"] in _READONLY, "destructiveHint": _t["name"] == "memory_forget"}
 
 
+MAX_MEMORY_CHARS = 4000        # one memory is one self-contained statement, not a document
+MAX_TOOL_ITEM_CHARS = 1200     # per memory in a tool reply
+MAX_TOOL_OUTPUT_CHARS = 20000  # whole tool reply
+
+
+def _clip(text: str, n: int = MAX_TOOL_ITEM_CHARS) -> str:
+    text = text or ""
+    return text if len(text) <= n else f"{text[:n]}... [truncated, {len(text)} chars]"
+
+
+def _clip_dicts(mems) -> list[dict]:
+    """Compact dicts for the structured half of a reply, bounded like the text half."""
+    out, used = [], 0
+    for m in mems:
+        d = m.to_dict(compact=True)
+        d["content"] = _clip(d.get("content", ""))
+        used += len(d["content"]) + 200
+        if used > MAX_TOOL_OUTPUT_CHARS:
+            break
+        out.append(d)
+    return out
+
+
 def _fmt(mems) -> str:
     if not mems:
         return "No memories found."
@@ -161,8 +188,12 @@ def _fmt(mems) -> str:
             bits.append(f"key={m.key}")
         if m.superseded_by:
             bits.append(f"superseded_by={m.superseded_by}")
-        lines.append(f"[{m.id}] ({', '.join(bits)}) {m.content}")
-    return "\n".join(lines)
+        content = _temporal.with_saved_note(m.content, m.created_at, display_content=_clip(m.content))
+        lines.append(f"[{m.id}] ({', '.join(bits)}) {content}")
+    text = "\n".join(lines)
+    if len(text) > MAX_TOOL_OUTPUT_CHARS:
+        text = text[:MAX_TOOL_OUTPUT_CHARS] + f"\n... [truncated, {len(lines)} results; narrow the query or lower k]"
+    return text
 
 
 class Server:
@@ -179,7 +210,14 @@ class Server:
         return args.get("scope") or self.read_scopes
 
     def call_tool(self, name: str, a: dict[str, Any]) -> tuple[str, Any]:
+        if name in ("memory_remember", "memory_update") and len(str(a.get("content") or "")) > MAX_MEMORY_CHARS:
+            raise ValueError(f"memory too long ({len(str(a['content']))} chars, max {MAX_MEMORY_CHARS}): "
+                             "save a short summary, or split it into separate facts")
         s = self.store
+        if name in ("memory_remember", "memory_update") and a.get("content"):
+            hit = _threats.first_threat(str(a["content"]))
+            if hit:
+                raise ValueError(_threats.rejection_message(hit))
         if name == "memory_remember":
             r = s.remember(
                 a["content"], scope=self._scope(a), kind=a.get("kind", "fact"), key=a.get("key"),
@@ -194,7 +232,7 @@ class Server:
                 a.get("query", ""), scope=self._read_scope(a), inherit=a.get("inherit", True), kinds=a.get("kinds"),
                 tags=a.get("tags"), k=int(a.get("k", 8)), budget_tokens=a.get("budget_tokens"),
             )
-            return _fmt(mems), {"memories": [m.to_dict(compact=True) for m in mems]}
+            return _fmt(mems), {"memories": _clip_dicts(mems)}
         if name == "memory_context":
             block = s.context(self._read_scope(a), query=a.get("query", ""), budget_tokens=int(a.get("budget_tokens", 1200)))
             return block or "No memories in this scope yet.", {"context": block}
@@ -203,11 +241,11 @@ class Server:
             r = s.update(a["id"], a.get("content"), **changes)
             return f"{r.status}: {r.id}", r.to_dict()
         if name == "memory_forget":
-            n = s.forget(a.get("id"), scope=a.get("scope"), key=a.get("key"))
+            n = s.forget(a.get("id"), scope=a.get("scope"), key=a.get("key"), hard=bool(a.get("hard", True)))
             return f"forgot {n} memor{'y' if n == 1 else 'ies'}", {"forgotten": n}
         if name == "memory_history":
             mems = s.history(a.get("id"), scope=a.get("scope"), key=a.get("key"))
-            return _fmt(mems), {"versions": [m.to_dict(compact=True) for m in mems]}
+            return _fmt(mems), {"versions": _clip_dicts(mems)}
         if name == "memory_why":
             from . import receipt as _receipt
 

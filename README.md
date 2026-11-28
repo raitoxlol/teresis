@@ -6,6 +6,22 @@ API, a CLI and a Python API, and all of them share the same store.
 
 Website: https://www.raitox.tech/teresis · License: Apache 2.0 (`LICENSE`).
 
+## Start with Hermes
+
+With Hermes already installed, install the Teresis CLI in its own environment and select it for
+your profile:
+
+```bash
+pipx install git+https://github.com/raitoxlol/teresis.git
+teresis hermes install --activate --profile default
+hermes --profile default memory status
+```
+
+Look for `Provider:  teresis` and `Status:    available`. Start a new session. To check memory
+across sessions, ask Hermes to use `memory_remember` to save a test fact, then use `memory_recall`
+in a fresh session to find it. No embedding model or API key is required by Teresis. See
+[Hermes Agent](#hermes-agent) for named profiles and storage options.
+
 ## Why it is built this way
 
 Agent memory differs from document RAG. Agents write constantly, repeat themselves, and change
@@ -305,10 +321,13 @@ server entry. Updating and checking an existing Codex TOML config requires Pytho
 optional `tomli` on Python 3.10.
 
 The general `setup` installs Hermes provider files only and reports partial rather than silently
-switching a profile. Use the explicit profile command below to select Teresis and pin the same
-absolute database. Setup exits
-nonzero if any selected client failed or is partial. Use `--only claude-code,cursor,codex` for
-desktop MCP wiring alone.
+switching a profile. An occupied `plugins/teresis` is left unchanged, not verified, repaired, or
+upgraded; if `plugins/` is symlinked, no new slot is installed. To refresh or repair a known
+CLI-made copy (not a native install or linked checkout), use
+`teresis hermes install --home /path/to/profile`; use Hermes native management for other installs.
+Use the explicit profile command below to select Teresis and pin the same absolute database. Setup
+exits nonzero if any selected client failed or is partial. Use `--only claude-code,cursor,codex`
+for desktop MCP wiring alone.
 
 `doctor` performs a write/recall/forget probe, checks the graph and optional embedder, and verifies
 the saved desktop launcher targets that DB. It does not verify a running desktop session or an
@@ -361,12 +380,13 @@ hermes --profile default memory status
 ```
 
 Use `--profile work` for a named profile, or add `--dry-run` to preview. The command uses the
-Hermes CLI on PATH (tested with Hermes 0.23.3), installs the local plugin, and pins the selected
-profile to the absolute database path. It refuses to replace another external provider, a
-different Teresis DB pin, or a deliberately disabled plugin. Use the same path you gave
-`teresis setup --db` for other agents. Start a new Hermes session after this change. No built-in
-memory files are moved, and Hermes's built-in memory remains active. Keep other Hermes settings
-edits closed while running activation.
+Hermes CLI on PATH (tested with Hermes 0.23.3), installs the local plugin, and shows the database
+it will use. It refuses to replace another external provider, a different Teresis DB pin, or a
+deliberately disabled plugin. Use the same path you gave `teresis setup --db` for other agents.
+Without `--db`, activation reuses the profile's configured database or chooses the standard shared
+Teresis path for a new pin. Start a new Hermes session after this change. No built-in memory files
+are moved, and Hermes's built-in memory remains active. Keep other Hermes settings edits closed
+while running activation.
 
 For file-only installation or development:
 
@@ -467,9 +487,12 @@ save or session start. See [Embeddings](#embeddings-optional) and
 Migrate existing built-in Hermes `MEMORY.md` and `USER.md` files (non-destructive, idempotent, secret-scrubbed):
 
 ```bash
-teresis hermes import --home ~/.hermes            # or ~/.hermes/profiles/<name>
-teresis hermes import --home ~/.hermes --dry-run  # preview counts only
+teresis hermes import --home ~/.hermes --dry-run --json  # preview counts and resolved database
+teresis hermes import --home ~/.hermes                   # or ~/.hermes/profiles/<name>
 ```
+
+Import stops if the configured destination is relative or cannot be resolved; use `--db` to choose
+the destination explicitly. Import does not automatically move old stray database files.
 
 ### MCP (Claude Code, Codex, Cursor, OMP, …)
 

@@ -92,6 +92,49 @@ def _bearer_repl(m: re.Match[str], marker: str) -> str:
     return marker if not m.group(1) else m.group(0)[: -len(m.group(1))] + marker
 
 
+def _luhn(digits: str) -> bool:
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch)
+        if i % 2:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+def _card_check(m: re.Match[str]) -> bool:
+    """13-19 digits, a plausible issuer prefix and a valid Luhn checksum (separators: spaces or dashes)."""
+    raw = m.group(0)
+    if re.search(r"[ -]{2}", raw) or raw[0] in " -" or raw[-1] in " -":
+        return False
+    digits = re.sub(r"[ -]", "", raw)
+    if not 13 <= len(digits) <= 19 or digits[0] not in "23456" or len(set(digits)) < 2:
+        return False
+    return _luhn(digits)
+
+
+# "my password is X" / "password: X": prose, not an assignment, so a short value still counts when it
+# looks like a password (has a digit or a symbol). Ordinary sentences about passwords are left alone.
+_PASSWORD_PHRASE = re.compile(
+    r"(?i)\b(?P<n>password|passcode|passphrase)(?P<s>\s{0,2}(?:\s(?:is|was)\s|[:=])\s{0,2})(?P<v>[^\s'\",;]+)")
+_NOT_PASSWORDS = frozenset("required incorrect wrong correct strong weak valid invalid empty blank hidden saved stored "
+                           "set reset changed expired missing here below above secret private long short".split())
+
+
+def _password_phrase_check(m: re.Match[str]) -> bool:
+    v = m.group("v").rstrip(_TRAIL)
+    if len(v) < 6 or v[0] in "$<`{[(*" or v.lower() in _NOT_PASSWORDS or _placeholder_parts(v) & _PLACEHOLDER_WORDS:
+        return False
+    return any(ch.isdigit() for ch in v) or any(not ch.isalnum() for ch in v)
+
+
+def _password_phrase_repl(m: re.Match[str], marker: str) -> str:
+    v = m.group("v")
+    return m.group("n") + m.group("s") + marker + v[len(v.rstrip(_TRAIL)):]
+
+
 # Order matters: more specific shapes first (sk-ant- before sk-, github before hf_, PEM first),
 # env assignments last so provider-prefixed values keep their precise kind.
 _RULES: list[_Rule] = [
@@ -110,9 +153,12 @@ _RULES: list[_Rule] = [
     _Rule("bearer_token", re.compile(
         r"(?i)\bbearer\s+([A-Za-z0-9._~+/=-]{20,})"
         r"|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), repl=_bearer_repl),
+    _Rule("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}")),
+    _Rule("payment_card", re.compile(r"(?<![\w.-])(?:\d[ -]?){12,18}\d(?![\w-])"), check=_card_check),
     _Rule("uri_credential", re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s/:@]+:([^\s/@]+)@"),
           check=_uri_check, repl=_uri_repl),
     _Rule("env_secret", _ENV, check=_env_check, repl=_env_repl),
+    _Rule("password_phrase", _PASSWORD_PHRASE, check=_password_phrase_check, repl=_password_phrase_repl),
 ]
 
 

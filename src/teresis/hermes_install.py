@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .hermes import PLUGIN_KEY, _PLUGIN_INIT, install
+from .hermes import PLUGIN_KEY, _PLUGIN_INIT, _profile_db_path, install
 from .store import default_db_path
 
 _BUILTIN = {"", "default", "builtin", "built-in", "none"}
@@ -23,8 +23,6 @@ def activate(profile: str, db: str | os.PathLike | None = None, *, dry_run: bool
         raise ValueError("Hermes CLI was not found on PATH")
     if not profile.strip() or profile.startswith("-"):
         raise ValueError("specify an existing Hermes profile (use 'default' for the default)")
-    path = (Path(db).expanduser() if db else default_db_path()).resolve()
-
     def run(*args: str, missing: str | None = None) -> str | None:
         command = [hermes, "--profile", profile, "config", *args]
         try:
@@ -72,12 +70,13 @@ def activate(profile: str, db: str | os.PathLike | None = None, *, dry_run: bool
     db_config = get(_DB_KEY)
     if db_config is not None and not isinstance(db_config, str):
         raise ValueError("Hermes Teresis db_path is not a path string")
-    if db_config:
-        existing = Path(os.path.expanduser(db_config.replace("${HERMES_HOME}", str(home))
-                                                           .replace("$HERMES_HOME", str(home))))
-        if not existing.is_absolute() or existing.resolve() != path:
-            raise ValueError(f"Hermes profile {profile!r} already has a different Teresis db_path; "
-                             "choose the same database or change the path explicitly in Hermes")
+    pinned = _profile_db_path(db_config, home) if db_config and db_config.strip() else None
+    if pinned is not None and not pinned.is_absolute():
+        raise ValueError("Hermes Teresis db_path must be absolute or start with $HERMES_HOME")
+    path = (Path(db).expanduser() if db else pinned or default_db_path()).resolve()
+    if pinned is not None and pinned.resolve() != path:
+        raise ValueError(f"Hermes profile {profile!r} already has a different Teresis db_path; "
+                         "choose the same database or change the path explicitly in Hermes")
 
     if plugin_root.is_symlink() or dest.is_symlink():
         raise ValueError("refusing to install through a symlinked Hermes plugin directory")
@@ -87,11 +86,11 @@ def activate(profile: str, db: str | os.PathLike | None = None, *, dry_run: bool
                 or not (dest / "plugin.yaml").is_file() or not (dest / "teresis/hermes.py").is_file()):
             raise ValueError("a non-Teresis-CLI plugin already occupies this slot; use Hermes' native memory setup")
 
-    unchanged = dest.is_dir() and db_config == str(path) and provider == PLUGIN_KEY
+    unchanged = dest.is_dir() and pinned is not None and provider == PLUGIN_KEY
     if not dry_run and not unchanged:
         if not dest.exists():
             install(home)
-        if db_config != str(path):
+        if pinned is None:
             run("set", _DB_KEY, str(path))
             if get(_DB_KEY) != str(path):
                 raise ValueError("Hermes did not persist the selected Teresis db_path; provider not switched")

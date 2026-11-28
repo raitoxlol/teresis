@@ -1,6 +1,6 @@
 """teresis: local, zero-dependency long-term memory for agents."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .store import Memory, MemoryStore, RememberResult, Weights, scope_chain  # noqa: E402
 

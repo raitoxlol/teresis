@@ -12,3 +12,4 @@ dist-check
 .taste-skill/*.txt
 !.taste-skill/brand-css.txt
 .vercel
+.env*

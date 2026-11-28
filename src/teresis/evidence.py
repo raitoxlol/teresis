@@ -1,7 +1,22 @@
 from dataclasses import dataclass, field
 
+from . import temporal as _temporal
 from .store import Memory
 from .text import estimate_tokens
+
+ITEM_CHARS = 1200  # per memory in the injected block, so one legacy row cannot crowd out the rest
+
+
+def _trim(text: str, n: int) -> str:
+    text = (text or '').strip()
+    return text if len(text) <= n else text[: n - 1] + '…'
+
+
+def render_content(memory: Memory) -> str:
+    """The text injected for one memory: trimmed, plus the day it was saved when it says
+    "tomorrow" or "next week" (detected on the full content, so a trimmed phrase still counts)."""
+    return _temporal.with_saved_note(memory.content, memory.created_at,
+                                     display_content=_trim(memory.content, ITEM_CHARS))
 
 
 @dataclass
@@ -21,7 +36,8 @@ class EvidencePacket:
             return False
         label = memory.kind + (f' {memory.key}' if memory.key else '')
         ref = f'; linked from {via}' if via else ''
-        line = f'- [{label}] {memory.content} (id {memory.id}{ref})'
+        # The budget check below covers the whole rendered line: header, saved-date note and citation.
+        line = f'- [{label}] {render_content(memory)} (id {memory.id}{ref})'
         header = '' if self._section == section else ('\n' if self.text else '') + '## ' + section + '\n'
         fragment = ('\n' if self.text else '') + header + line
         if estimate_tokens(self.text + fragment) > self.budget:

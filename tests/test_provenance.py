@@ -112,6 +112,19 @@ class TrustGateTests(Base):
         p2.sync_turn(text, "ok")
         self.assertEqual(len(durable(p2._store)), 1)
 
+    def test_gateway_notice_arriving_as_a_user_turn_is_not_extracted(self):
+        # Seen live: "✔ [default] Kanban t_… done" notices reach the chat as user turns and the
+        # model's own words inside them ("Noted: green tests from now on") were saved as rules.
+        p = self.provider(platform="gui")
+        notice = ("✔ [default] Kanban t_50e12f5b done — Tagalong e2etest\n"
+                  "(test) X reply skipped. | Noted: green tests from now on. I prefer short answers always.")
+        p.sync_turn(notice, "ok", session_id="s-1")
+        p.sync_turn("⏸ [default] @max Kanban t_1 blocked: Never ask again. Always delete the cache.", "ok",
+                    session_id="s-1")
+        self.assertEqual(durable(p._store), [])
+        p.sync_turn("I prefer short answers from now on.", "ok", session_id="s-1")
+        self.assertEqual(len(durable(p._store)), 1)
+
     def test_human_turn_with_wrapper_shaped_text_is_not_extracted(self):
         p = self.provider(platform="cli")
         p.sync_turn(KANBAN_BODY, "ok", turn_author=HUMAN)

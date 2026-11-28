@@ -33,6 +33,7 @@ from . import extract as _extract
 from . import provenance as _prov
 from . import review as _review
 from . import secrets as _secrets
+from . import threats as _threats
 from .evidence import EvidencePacket
 from .mcp import TOOLS, Server
 from .store import MemoryStore, default_db_path
@@ -83,10 +84,22 @@ DEFAULTS: Dict[str, Any] = {
     "pre_compress_checkpoint": True,   # metadata-only episode, never a preference/decision/procedure row
     "candidate_ttl_days": 14,
     "embed_timeout": 120,
+    "busy_timeout": 5,         # seconds a write waits on another writer before it fails (CLI default: 30)
     "embed_auth": "profile",
     "rerank": "",            # "fastembed" enables the local ONNX cross-encoder; empty/none = off
     "rerank_model": "Xenova/ms-marco-MiniLM-L-6-v2",
 }
+
+
+def _profile_db_path(configured: str, home: str | os.PathLike) -> Path:
+    raw = configured.strip()
+    if not raw:
+        return default_db_path()
+    path = Path(raw.replace("${HERMES_HOME}", os.fspath(home)).replace("$HERMES_HOME", os.fspath(home)))
+    try:
+        return path.expanduser()
+    except RuntimeError as exc:
+        raise ValueError("cannot expand the user home in Hermes Teresis db_path") from exc
 
 
 def _load_config() -> Dict[str, Any]:
@@ -291,6 +304,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._review_note = ""
         self._offer_path = None
         self._offers: Dict[str, List[str]] = {}
+        self._init_error = ""
 
     # -- identity ----------------------------------------------------------
     @property
@@ -311,10 +325,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
 
     # -- lifecycle ---------------------------------------------------------
     def _db_path(self, hermes_home: str) -> str:
-        raw = str(self._config.get("db_path") or "").strip()
-        if not raw:
-            return str(default_db_path())
-        return os.path.expanduser(raw.replace("${HERMES_HOME}", hermes_home).replace("$HERMES_HOME", hermes_home))
+        return str(_profile_db_path(str(self._config.get("db_path") or ""), hermes_home))
 
     def initialize(self, session_id: str, **kwargs) -> None:
         hermes_home = str(kwargs.get("hermes_home") or os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
@@ -326,7 +337,6 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._session_id = session_id
         self._platform = kwargs.get("platform", "")
         self._identity = identity
-        self._offer_path = _review.offer_path(self._db_path(hermes_home))
         try:
             embedder = _profile_embedder(self._config, hermes_home)
         except (TypeError, ValueError):
@@ -339,7 +349,15 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         except Exception as exc:
             log.warning("teresis reranker unavailable (%s); continuing without rerank", exc)
             reranker = None
-        self._store = MemoryStore(self._db_path(hermes_home), embedder=embedder, reranker=reranker)
+        try:
+            db_path = self._db_path(hermes_home)
+            self._offer_path = _review.offer_path(db_path)
+            self._store = MemoryStore(db_path, embedder=embedder, reranker=reranker,
+                                      busy_timeout=float(self._config.get("busy_timeout", 5)))
+        except Exception as exc:
+            self._init_error = f"{type(exc).__name__}: {exc}"
+            raise
+        self._init_error = ""
         self._server = Server(self._store, default_scope=self._read_scopes)
         if embedder and self._write_enabled:
             self._capture_indexer = _CaptureIndexer(self._store, embedder, hermes_home)
@@ -620,6 +638,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         """
         saved = []
         for c in _extract.extract(text):
+            if _threats.first_threat(c.content):
+                continue  # an instruction aimed at the agent is not a fact about the user
             scope = "user" if c.kind == "preference" else self._scope
             try:
                 ok = (self._store_explicit(c, scope, source) if (human and c.explicit)
@@ -677,6 +697,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             prev = _secrets.redact_secrets(prev)[0]
         if content:
             content = _secrets.redact_secrets(content)[0]
+        if action in ("add", "replace") and content and _threats.first_threat(content):
+            return  # Hermes' own scanner normally stops this first; never mirror it if it slips through
         try:
             if action == "add" and content:
                 self._write_or_skip(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool",
@@ -814,9 +836,36 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         return json.dumps({"result": "\n\n".join(sections), "receipts": receipts,
                            "missing": missing}, default=str)
 
+    def _scope_allowed(self, scope: Any) -> bool:
+        """``hermes/<identity>`` is one profile's namespace. Everything outside ``hermes/`` (user, global,
+        project/...) is shared by design. Without this a model could name another profile's scope in a
+        tool argument and read, forge or delete its memories in a shared database."""
+        if not isinstance(scope, str):
+            return False
+        s = scope.strip("/ ")
+        if not s.startswith("hermes/") and s != "hermes":
+            return True
+        return any(s == a or s.startswith(a + "/") for a in self._read_scopes)
+
+    def _tool_scope_error(self, tool_name: str, args: Dict[str, Any]) -> Optional[str]:
+        refused = (f"scope belongs to another Hermes profile; this profile can use `{self._scope}`, "
+                   f"{', '.join(f'`{s}`' for s in self._read_scopes[1:]) or 'no extra scopes'} and shared scopes (user, global, project/...).")
+        if "scope" in args and args["scope"] not in (None, "") and not self._scope_allowed(args["scope"]):
+            return refused
+        mids = [args["id"]] if args.get("id") else []
+        if tool_name == "memory_why" and isinstance(args.get("ids"), (list, tuple)):
+            mids += list(args["ids"])  # receipts show content, so every id is checked like a read
+        if tool_name in {"memory_update", "memory_forget", "memory_feedback", "memory_history", "memory_why"}:
+            for mid in mids:
+                row = self._store.get(str(mid)) if (self._store and mid) else None
+                if row is not None and not self._scope_allowed(row.scope):
+                    return refused
+        return None
+
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         if not self._server:
-            return json.dumps({"error": "teresis is not initialized"})
+            why = f": {self._init_error}" if self._init_error else ""
+            return json.dumps({"error": f"teresis is not initialized{why}"})
         if tool_name == "memory_review":
             try:
                 return self._memory_review(dict(args or {}))
@@ -828,7 +877,14 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         if tool_name in _WRITE_TOOLS and not self._write_enabled:
             return json.dumps({"error": "memory writes are disabled in this agent context (subagent/cron/flush)"})
         try:
-            text, data = self._server.call_tool(tool_name, dict(args or {}))
+            args = dict(args or {})
+            denied = self._tool_scope_error(tool_name, args)
+            if denied:
+                return json.dumps({"error": denied})
+            text, data = self._server.call_tool(tool_name, args)
+            if tool_name == "memory_stats" and isinstance(data, dict) and isinstance(data.get("scopes"), dict):
+                data = {**data, "scopes": {k: v for k, v in data["scopes"].items() if self._scope_allowed(k)}}
+                text = json.dumps(data, indent=2, default=str)
             return json.dumps({"result": text, **(data if isinstance(data, dict) else {"data": data})}, default=str)
         except Exception as exc:
             return json.dumps({"error": str(exc)})
@@ -985,7 +1041,10 @@ def import_memories(
     """Import Hermes built-in MEMORY.md and USER.md entries into a Teresis store (non-destructive, idempotent)."""
     home = Path(hermes_home).expanduser()
     cfg = _read_teresis_yaml_config(home)
-    target_db = Path(db_path or cfg.get("db_path") or default_db_path()).expanduser()
+    target_db = Path(db_path).expanduser() if db_path else _profile_db_path(cfg.get("db_path", ""), home.absolute())
+    if not db_path and cfg.get("db_path", "").strip() and not target_db.is_absolute():
+        raise ValueError("Hermes Teresis db_path must be absolute or start with $HERMES_HOME; "
+                         "use --db to choose the import destination")
     default_scope = f"hermes/{home.name}" if home.parent.name == "profiles" else "hermes/default"
     target_scope = (scope or cfg.get("scope") or default_scope).strip()
 

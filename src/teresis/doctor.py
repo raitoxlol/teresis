@@ -192,7 +192,13 @@ def setup(home: Path | None = None, *, db: str | os.PathLike | None = None,
             elif client.kind == "toml":
                 detail = _write_toml(client.config, path, dry_run=dry_run)
             else:
-                if dry_run:
+                plugin_root = client.config / "plugins"
+                dest = plugin_root / "teresis"
+                if os.path.lexists(dest):
+                    install_detail = f"existing Hermes plugin path (unchanged, not verified): {dest}; verify it works before continuing"
+                elif plugin_root.is_symlink():
+                    raise ValueError("refusing to install through a symlinked Hermes plugin directory")
+                elif dry_run:
                     install_detail = f"would install Hermes provider in {client.config}"
                 else:
                     from .hermes import install

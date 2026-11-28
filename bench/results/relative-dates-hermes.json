@@ -1,0 +1,460 @@
+{
+  "summary": {
+    "public": {
+      "inline": {
+        "n": 16,
+        "correct": 1,
+        "outcomes": {
+          "incorrect": 15,
+          "correct": 1
+        },
+        "mean_tokens": 602.6
+      },
+      "calendar": {
+        "n": 16,
+        "correct": 9,
+        "outcomes": {
+          "correct": 9,
+          "incorrect": 7
+        },
+        "mean_tokens": 629.5
+      }
+    },
+    "controls": {
+      "inline": {
+        "n": 4,
+        "correct": 4,
+        "outcomes": {
+          "correct_refusal": 2,
+          "correct": 2
+        },
+        "mean_tokens": 101
+      },
+      "calendar": {
+        "n": 4,
+        "correct": 4,
+        "outcomes": {
+          "correct_refusal": 2,
+          "correct": 2
+        },
+        "mean_tokens": 118
+      }
+    }
+  },
+  "gains": [
+    "c3q15",
+    "c3q13",
+    "c9q26",
+    "c9q14",
+    "c2q38",
+    "c2q1",
+    "c4q47",
+    "c5q1"
+  ],
+  "losses": [],
+  "accept_bench_only": true,
+  "system_hash_differences": [],
+  "jobs_sha256": "1a121d56caf4b846033831a3a0e9dd3029c14f13dbce813fb275bb1ece398db9",
+  "rows": [
+    {
+      "key": "c3q15",
+      "arm": "inline",
+      "answer": "April 15, 2022",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 571,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c3q15",
+      "arm": "calendar",
+      "answer": "Nate got purple hair last week, which was the week before 15 April 2022.",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 612,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c7q38",
+      "arm": "calendar",
+      "answer": "13 March, 2023",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 629,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c7q38",
+      "arm": "inline",
+      "answer": "13 March, 2023",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 611,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c3q13",
+      "arm": "inline",
+      "answer": "March 24, 2022",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 632,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c3q13",
+      "arm": "calendar",
+      "answer": "Yesterday, on 23 March 2022.",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 670,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c7q27",
+      "arm": "calendar",
+      "answer": "2022",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 663,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c7q27",
+      "arm": "inline",
+      "answer": "February 4, 2023",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 627,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c9q26",
+      "arm": "inline",
+      "answer": "22 August, 2023",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 590,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c9q26",
+      "arm": "calendar",
+      "answer": "21 August 2023",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 608,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c9q14",
+      "arm": "calendar",
+      "answer": "8 June 2023",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 699,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c9q14",
+      "arm": "inline",
+      "answer": "June 9, 2023",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 682,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c2q38",
+      "arm": "inline",
+      "answer": "Maria got in a car accident on 3 July, 2023.",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 568,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c2q38",
+      "arm": "calendar",
+      "answer": "2 July 2023",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 623,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c2q1",
+      "arm": "calendar",
+      "answer": "21 December 2022",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 631,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c2q1",
+      "arm": "inline",
+      "answer": "December 22, 2022",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 596,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "control-aster-1",
+      "arm": "inline",
+      "answer": "UNKNOWN",
+      "verdict": "correct_refusal",
+      "correct": true,
+      "tokens": 101,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "control-aster-1",
+      "arm": "calendar",
+      "answer": "UNKNOWN",
+      "verdict": "correct_refusal",
+      "correct": true,
+      "tokens": 118,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c4q44",
+      "arm": "calendar",
+      "answer": "November 6, 2023",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 675,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c4q44",
+      "arm": "inline",
+      "answer": "November 2023",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 640,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c4q47",
+      "arm": "inline",
+      "answer": "October 2, 2023",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 541,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c4q47",
+      "arm": "calendar",
+      "answer": "Last week, which was the week before 2 October 2023.",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 561,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c5q1",
+      "arm": "calendar",
+      "answer": "Last week, which was the week before 27 March, 2023.",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 540,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c5q1",
+      "arm": "inline",
+      "answer": "Andrew started his new job as a Financial Analyst last week.",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 519,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c6q55",
+      "arm": "inline",
+      "answer": "Last Tuesday",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 618,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c6q55",
+      "arm": "calendar",
+      "answer": "Last week, on 13 October 2022.",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 639,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c6q46",
+      "arm": "calendar",
+      "answer": "4 September, 2022",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 628,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c6q46",
+      "arm": "inline",
+      "answer": "4 September, 2022",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 610,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c8q13",
+      "arm": "inline",
+      "answer": "June 6, 2023",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 616,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c8q13",
+      "arm": "calendar",
+      "answer": "Last week, which was before 6 June 2023.",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 636,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c5q5",
+      "arm": "calendar",
+      "answer": "Last week, on 3 May, 2023.",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 583,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c5q5",
+      "arm": "inline",
+      "answer": "May 3, 2023",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 563,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c8q23",
+      "arm": "inline",
+      "answer": "Sam started working out at the gym on 27 July, 2023.",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 657,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "c8q23",
+      "arm": "calendar",
+      "answer": "Sam started working out at the gym on 27 July, 2023.",
+      "verdict": "incorrect",
+      "correct": false,
+      "tokens": 675,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "control-aster-0",
+      "arm": "calendar",
+      "answer": "4718",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 118,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "control-aster-0",
+      "arm": "inline",
+      "answer": "4718",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 101,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "control-birch-0",
+      "arm": "inline",
+      "answer": "3647",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 101,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "control-birch-0",
+      "arm": "calendar",
+      "answer": "3647",
+      "verdict": "correct",
+      "correct": true,
+      "tokens": 118,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "control-birch-1",
+      "arm": "calendar",
+      "answer": "UNKNOWN",
+      "verdict": "correct_refusal",
+      "correct": true,
+      "tokens": 118,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    },
+    {
+      "key": "control-birch-1",
+      "arm": "inline",
+      "answer": "UNKNOWN",
+      "verdict": "correct_refusal",
+      "correct": true,
+      "tokens": 101,
+      "finish": "text_response(finish_reason=stop)",
+      "error": null
+    }
+  ]
+}

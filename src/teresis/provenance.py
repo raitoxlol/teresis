@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, Mapping
 
+from . import threats as _threats
 from .extract import EXTRACT_SOURCES, _BLOCK_MARKERS, _MEMORY_BLOCK, _SYSTEM_SENTENCE
 
 # --------------------------------------------------------------------------- origins
@@ -62,6 +63,8 @@ _WRAPPER_HEAD = re.compile(
     r"|this session is being continued"
     r"|(?:the following is )?a summary of (?:the )?(?:prior|previous|earlier) (?:conversation|context)"
     r"|(?:scheduled|cron) (?:job|task|run)\b"
+    # Gateway notices that arrive as user turns, e.g. "✔ [default] Kanban t_ab12cd34 done".
+    r"|[\u2714\u2716\u23f8\u26a0\u2705\u274c]\ufe0f?\s*\[[^\]]{1,40}\]"
     r")",
     re.I,
 )
@@ -171,6 +174,8 @@ def injectable(kind: str, content: str, meta: Any, source: str | None) -> tuple[
     """May this row be put in a prompt as a standing fact? Applies to promoted rows too."""
     if is_candidate(kind):
         return False, "candidate"
+    if _threats.first_threat(content or ""):
+        return False, "threat"  # instruction-shaped text is never put in a prompt, whoever wrote it
     origin = effective_origin(meta, source, kind)
     m = _as_meta(meta)
     if kind == "episode":
