@@ -34,10 +34,10 @@ from . import provenance as _prov
 from . import review as _review
 from . import secrets as _secrets
 from . import threats as _threats
-from .evidence import EvidencePacket
-from .mcp import TOOLS, Server
+from .evidence import ITEM_CHARS, EvidencePacket
+from .mcp import TOOLS, Server, why_reply
 from .store import MemoryStore, default_db_path
-from .text import containment, term_set, tokens
+from .text import containment, estimate_tokens, term_set, tokens
 
 log = logging.getLogger("teresis.hermes")
 
@@ -233,6 +233,25 @@ def _trim(text: str, n: int) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+def _fit_note(lines: List[str], budget: int) -> str:
+    """Render a ``[title, head, *items, tail]`` note within ``budget`` estimated tokens.
+
+    Items are dropped from the end first (with a count of what was left out), and the
+    title, head and tail stay. A budget too small even for that gets a hard cut.
+    """
+    if not lines or budget <= 0:
+        return ""
+    head, items, tail = lines[:2], lines[2:-1], lines[-1:]
+    text = ""
+    for n in range(len(items), -1, -1):
+        more = [f"- ... {len(items) - n} more not shown"] if n < len(items) else []
+        text = "\n".join(head + items[:n] + more + tail)
+        if estimate_tokens(text) <= budget:
+            return text
+    cap = 4 * budget  # estimate_tokens(t) <= budget exactly when len(t) <= 4 * budget
+    return text if len(text) <= cap else text[: cap - 1] + "…"
+
+
 # Unstemmed tokens that are too common to justify injecting a memory on their own.
 # Inflected forms are included so "likes" does not sneak past "like".
 _PREFETCH_WEAK = frozenset(
@@ -302,8 +321,10 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._turn_human = False
         self._turn_author = ""
         self._review_note = ""
+        self._review_lines: List[str] = []
         self._offer_path = None
-        self._offers: Dict[str, List[str]] = {}
+        # In-memory offers for a ``:memory:`` db: same keying and bounds as the offer file.
+        self._offers: Dict[str, Any] = {}
         self._init_error = ""
 
     # -- identity ----------------------------------------------------------
@@ -376,6 +397,14 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
     def on_session_switch(self, new_session_id: str, *, parent_session_id: str = "", reset: bool = False,
                           rewound: bool = False, **kwargs) -> None:
         self._session_id = str(new_session_id or "").strip() or self._session_id
+        parent = str(parent_session_id or "").strip()
+        # Compression and /branch continue the same conversation under a new id (reset=False),
+        # so a pending review list follows it. /new (reset=True) starts fresh: no carry-over.
+        if parent and not reset and parent != self._session_id and self._store and self._write_enabled:
+            try:
+                self._carry_offer(parent, self._session_id)
+            except Exception as exc:
+                log.debug("teresis offer carry-over failed: %s", exc)
 
     # -- prompt ------------------------------------------------------------
     def system_prompt_block(self) -> str:
@@ -397,10 +426,14 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             "- Never store secrets, credentials or tokens."
         )
 
+    def _set_review_note(self, lines: List[str]) -> None:
+        self._review_lines = list(lines)
+        self._review_note = "\n".join(lines)
+
     def on_turn_start(self, turn_number: int, message: str, **kwargs) -> None:
         try:
             self._prev_ids, self._last_ids = self._last_ids, []
-            self._review_note = ""
+            self._set_review_note([])
             author_id = kwargs.get("author_id")
             author_name = kwargs.get("author_name")
             author_is_bot = kwargs.get("author_is_bot")
@@ -414,9 +447,14 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             actions = _review.parse_reply(authored)
             if not actions:
                 return
-            offer = (_review.load_offer(self._offer_path, self._scope, self._store.clock())
-                     if self._offer_path is not None else self._offers.get(self._scope) or [])
+            offer = self._load_offer()
             if not offer:
+                self._set_review_note([
+                    "## Memory review (teresis)",
+                    "The user's message reads as a memory review reply, but no review list is pending "
+                    "in this conversation, so nothing was changed.",
+                    "If they meant memories, call memory_review to show the list; otherwise ignore this note.",
+                ])
                 return
             res = _review.apply_reply(
                 self._store, offer, actions, by="chat-review",
@@ -428,22 +466,27 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             head = (f"Applied from the user's own message: kept {len(kept)}, dropped {len(dropped)}"
                     + (f", skipped {len(skipped)} (no longer waiting)" if skipped else "") + ".")
             lines = ["## Memory review (teresis)", head]
-            lines += [f"- kept [{r['id']}] {r['content']}" for r in kept]
-            lines += [f"- dropped [{r['id']}] {r['content']}" for r in dropped]
+            lines += [f"- kept [{r['id']}] {_trim(r['content'], ITEM_CHARS)}" for r in kept]
+            lines += [f"- dropped [{r['id']}] {_trim(r['content'], ITEM_CHARS)}" for r in dropped]
             lines.append("Confirm this to the user in one line.")
-            self._review_note = "\n".join(lines)
+            self._set_review_note(lines)
         except Exception as exc:
             log.debug("teresis on_turn_start failed: %s", exc)
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         self._last_count = 0
         self._last_ids = []
-        note = self._review_note
+        try:
+            budget = int(self._config['prefetch_budget_tokens'])
+        except (TypeError, ValueError):
+            budget = int(DEFAULTS['prefetch_budget_tokens'])
+        # The review note is the head of the packet, so the budget covers it too.
+        note = _fit_note(self._review_lines, budget)
         if not self._store or _is_trivial(query):
             return note
         try:
             k = min(30, int(self._config['prefetch_k']))
-            packet = EvidencePacket(k, int(self._config['prefetch_budget_tokens']))
+            packet = EvidencePacket(k, int(self._config['prefetch_budget_tokens']), text=note)
             if packet.full:
                 return note
             query = _secrets.redact_secrets(query)[0]
@@ -486,7 +529,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
                         accepted += 1
             self._last_count = len(packet.ids)
             self._last_ids = sorted(packet.ids)
-            return note + ("\n\n" if note and packet.text else "") + packet.text
+            return packet.text
         except Exception as exc:
             log.debug("teresis prefetch failed: %s", exc)
             return note
@@ -783,11 +826,27 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         return _openai_schemas() + [self._MEMORY_REVIEW_SCHEMA]
 
+    # Offers are keyed by (scope, session): a reply only applies the list its own conversation showed.
     def _save_offer(self, ids: List[str]) -> None:
+        now = self._store.clock()
         if self._offer_path is not None:
-            _review.save_offer(self._offer_path, self._scope, ids, self._store.clock())
+            _review.save_offer(self._offer_path, self._scope, self._session_id, ids, now)
         else:
-            self._offers[self._scope] = list(ids)
+            self._offers = _review.put_offer(self._offers, self._scope, self._session_id, ids, now)
+
+    def _load_offer(self) -> List[str]:
+        now = self._store.clock()
+        if self._offer_path is not None:
+            return _review.load_offer(self._offer_path, self._scope, self._session_id, now)
+        return _review.get_offer(self._offers, self._scope, self._session_id, now)
+
+    def _carry_offer(self, parent: str, child: str) -> None:
+        now = self._store.clock()
+        if self._offer_path is None:
+            self._offers = _review.carry_offer(self._offers, self._scope, parent, child, now)
+        elif _review.load_offer(self._offer_path, self._scope, parent, now):
+            _review.edit_offers(self._offer_path,
+                                lambda offers: _review.carry_offer(offers, self._scope, parent, child, now), now)
 
     def _memory_review(self, args: Dict[str, Any]) -> str:
         if not self._store:
@@ -818,23 +877,13 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
                            "applied": self._review_note or ""}, default=str)
 
     def _why_packets(self) -> str:
-        from . import receipt as _receipt
-
         this_ids = list(self._last_ids)
         prev_ids = [i for i in self._prev_ids if i not in set(this_ids)]
         if not this_ids and not prev_ids:
             return json.dumps({"result": "Nothing was injected from memory in this or the previous "
                                          "turn. Pass an id from memory_recall."})
-        sections, receipts, missing = [], [], []
-        for label, ids in (("This turn", this_ids), ("Previous turn", prev_ids)):
-            if not ids:
-                continue
-            text, data = _receipt.explain(self._store, ids)
-            sections.append(f"{label}:\n{text}")
-            receipts += data["receipts"]
-            missing += data["missing"]
-        return json.dumps({"result": "\n\n".join(sections), "receipts": receipts,
-                           "missing": missing}, default=str)
+        text, data = why_reply(self._store, [("This turn", this_ids), ("Previous turn", prev_ids)])
+        return json.dumps({"result": text, **data}, default=str)
 
     def _scope_allowed(self, scope: Any) -> bool:
         """``hermes/<identity>`` is one profile's namespace. Everything outside ``hermes/`` (user, global,

@@ -21,6 +21,10 @@ def render_content(memory: Memory) -> str:
 
 @dataclass
 class EvidencePacket:
+    """At most ``limit`` memories in at most ``budget`` estimated tokens of rendered text.
+
+    ``text`` may start with a lead block (the Hermes review note); the budget covers it too.
+    """
     limit: int
     budget: int
     text: str = ''

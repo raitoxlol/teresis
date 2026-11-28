@@ -74,6 +74,19 @@ def _exercise_review(manager, provider):
     assert provider._store.get(second).kind == "candidate"
     assert "Memory review" in text, text
 
+    # Offers belong to the conversation that showed them. /new starts a fresh one: no list there.
+    manager.on_session_switch("native-fresh", parent_session_id="native-review", reset=True, reason="new_session")
+    manager.on_turn_start(3, "drop 2", author_id=None, author_name=None, author_is_bot=False)
+    text = manager.prefetch_all("drop 2", session_id="native-fresh")
+    assert provider._store.get(second).deleted_at is None, provider._store.get(second).to_dict()
+    assert "nothing was changed" in text, text
+    # /resume, then compression continues the conversation under a new id: the list follows it.
+    manager.on_session_switch("native-review", parent_session_id="", reset=False)
+    manager.on_session_switch("native-review-2", parent_session_id="native-review", reset=False,
+                              reason="compression")
+    manager.on_turn_start(4, "drop 2", author_id=None, author_name=None, author_is_bot=False)
+    assert provider._store.get(second).deleted_at is not None, provider._store.get(second).to_dict()
+
 
 def exercise_provider(phase):
     from agent.memory_manager import MemoryManager

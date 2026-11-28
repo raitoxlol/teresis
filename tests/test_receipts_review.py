@@ -1,6 +1,9 @@
 """Receipts (memory_why) and human-in-chat review (memory_review)."""
 
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,8 +12,9 @@ from teresis import provenance
 from teresis import receipt as _receipt
 from teresis import review as _review
 from teresis.hermes import TeresisMemoryProvider
-from teresis.mcp import Server
-from teresis.store import MemoryStore
+from teresis.mcp import MAX_TOOL_ITEM_CHARS, MAX_TOOL_OUTPUT_CHARS, Server
+from teresis.store import DAY, MemoryStore
+from teresis.text import estimate_tokens
 
 SCOPE = "hermes/max"
 
@@ -68,15 +72,21 @@ class ReceiptTests(StoreMixin, unittest.TestCase):
 class ProviderMixin:
     db = ":memory:"
 
-    def provider(self, db=None, **kw):
+    def provider(self, db=None, session="s1", **kw):
         config = {"db_path": db if db is not None else self.db, "scope": SCOPE,
-                  "extra_scopes": "user", "embed": "", "rerank": ""}
+                  "extra_scopes": "user", "embed": "", "rerank": "", **kw.pop("config", {})}
         init = {"platform": "cli", "agent_identity": "max"}
         init.update(kw.pop("init", {}))
         p = TeresisMemoryProvider(config)
         self.addCleanup(p.shutdown)
-        p.initialize("s1", **init)
+        p.initialize(session, **init)
         return p
+
+    def _direct_candidate(self, p, content):
+        return p._store.remember(content, scope=SCOPE, kind="candidate",
+                                 source="hermes:auto-extract",
+                                 meta={"origin": "auto-candidate", "trust": "untrusted",
+                                       "candidate_kind": "fact", "seen": []}).id
 
     def candidates(self, p, *sentences):
         """Create candidates through the real extraction path (human turn, no strong marker)."""
@@ -166,12 +176,6 @@ class ReviewFlowTests(ProviderMixin, unittest.TestCase):
         self.assertEqual(p._store.get(items[0]["id"]).kind, "candidate")
         self.assertEqual(p._store.get(items[1]["id"]).kind, "candidate")
 
-    def _direct_candidate(self, p, content):
-        return p._store.remember(content, scope=SCOPE, kind="candidate",
-                                 source="hermes:auto-extract",
-                                 meta={"origin": "auto-candidate", "trust": "untrusted",
-                                       "candidate_kind": "fact", "seen": []}).id
-
     def test_non_human_turns_do_not_apply(self):
         p = self.provider()
         items = self.two_candidates(p)
@@ -191,7 +195,8 @@ class ReviewFlowTests(ProviderMixin, unittest.TestCase):
         items = self.candidates(p, "My database port is 5432.")
         p.on_turn_start(2, "keep 1")
         self.assertEqual(p._store.get(items[0]["id"]).kind, "candidate")
-        self.assertEqual(p._review_note, "")
+        self.assertIn("no review list is pending in this conversation", p._review_note)
+        self.assertIn("nothing was changed", p.prefetch("keep 1"))
 
     def test_offer_survives_restart(self):
         with tempfile.TemporaryDirectory() as d:
@@ -229,6 +234,285 @@ class ReviewFlowTests(ProviderMixin, unittest.TestCase):
         self.assertEqual(p._store.get(items[1]["id"]).kind, "candidate")
         self.assertEqual(p._review_note, "")
 
+
+
+T0 = 1_700_000_000.0
+
+_WRITER = """
+import sys
+from pathlib import Path
+from teresis import review
+path, tag, n = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+for i in range(n):
+    review.save_offer(path, "hermes/max", f"{tag}-{i}", [f"{tag}{i:03d}"], 1_700_000_000.0 + i)
+"""
+
+
+class OfferStoreTests(unittest.TestCase):
+    """The offer file on its own: keying, expiry, cap, bad files, concurrent writers."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.path = Path(self.dir.name) / "t.db.review.json"
+
+    def raw(self):
+        return json.loads(self.path.read_text(encoding="utf-8"))["offers"]
+
+    def test_keyed_by_scope_and_session(self):
+        _review.save_offer(self.path, SCOPE, "A", ["x"], T0)
+        _review.save_offer(self.path, SCOPE, "B", ["y"], T0 + 1)
+        _review.save_offer(self.path, "hermes/other", "A", ["z"], T0 + 2)
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "A", T0 + 3), ["x"])
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "B", T0 + 3), ["y"])
+        self.assertEqual(_review.load_offer(self.path, "hermes/other", "A", T0 + 3), ["z"])
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "C", T0 + 3), [])
+
+    def test_old_offers_expire_and_are_pruned(self):
+        _review.save_offer(self.path, SCOPE, "old", ["x"], T0)
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "old", T0 + 13 * DAY), ["x"])
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "old", T0 + 15 * DAY), [])
+        _review.save_offer(self.path, SCOPE, "new", ["y"], T0 + 15 * DAY)
+        self.assertEqual([e["session"] for e in self.raw().values()], ["new"])
+
+    def test_count_is_capped_newest_kept(self):
+        cap = _review.OFFER_MAX_COUNT
+        for i in range(cap + 5):
+            _review.save_offer(self.path, SCOPE, f"s{i}", [f"m{i}"], T0 + i)
+        sessions = {e["session"] for e in self.raw().values()}
+        self.assertEqual(len(sessions), cap)
+        self.assertNotIn("s0", sessions)
+        self.assertNotIn("s4", sessions)
+        self.assertIn("s5", sessions)
+        self.assertIn(f"s{cap + 4}", sessions)
+        # The in-memory fallback uses the same bounds.
+        offers = {}
+        for i in range(cap + 5):
+            offers = _review.put_offer(offers, SCOPE, f"s{i}", [f"m{i}"], T0 + i)
+        self.assertEqual(len(offers), cap)
+        self.assertEqual(_review.get_offer(offers, SCOPE, "s0", T0 + cap + 5), [])
+        self.assertEqual(_review.get_offer(offers, SCOPE, f"s{cap + 4}", T0 + cap + 5), [f"m{cap + 4}"])
+
+    def test_legacy_and_corrupt_files_hold_no_offer(self):
+        # A pre-session file ({scope: {at, ids}}) was not shown in any known conversation.
+        self.path.write_text(json.dumps({SCOPE: {"at": T0, "ids": ["x"]}}), encoding="utf-8")
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "", T0), [])
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "s1", T0), [])
+        self.path.write_text("{not json", encoding="utf-8")
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "s1", T0), [])
+        _review.save_offer(self.path, SCOPE, "s1", ["y"], T0)
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "s1", T0), ["y"])
+        self.assertEqual(len(self.raw()), 1)
+
+    def test_concurrent_processes_keep_every_offer(self):
+        procs, n = 4, 40
+        env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
+        running = [subprocess.Popen([sys.executable, "-c", _WRITER, str(self.path), f"p{k}", str(n)], env=env)
+                   for k in range(procs)]
+        for proc in running:
+            self.assertEqual(proc.wait(timeout=120), 0)
+        offers = self.raw()  # also proves the file is valid JSON
+        self.assertEqual(len(offers), procs * n)
+        for k in range(procs):
+            for i in range(n):
+                self.assertEqual(_review.load_offer(self.path, SCOPE, f"p{k}-{i}", T0 + n), [f"p{k}{i:03d}"])
+        self.assertEqual([f for f in os.listdir(self.dir.name) if f.endswith(".tmp")], [])
+
+
+class OfferSessionTests(ProviderMixin, unittest.TestCase):
+    """Two conversations on one db and scope, as a gateway and a dashboard process run them."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.file_db = str(Path(self.tmp.name) / "t.db")
+        self.now = [T0]
+
+    def chat(self, session, db=None):
+        p = self.provider(db=db or self.file_db, session=session)
+        p._store.clock = lambda: self.now[0]
+        return p
+
+    def review_ids(self, p):
+        return [i["id"] for i in json.loads(p.handle_tool_call("memory_review", {}))["items"]]
+
+    def test_keep_applies_the_list_its_own_conversation_showed(self):
+        a, b = self.chat("chat-A"), self.chat("chat-B")
+        x = self._direct_candidate(a, "The database port is 5432.")
+        self.assertEqual(self.review_ids(a), [x])
+        self.now[0] += 2 * DAY
+        y = self._direct_candidate(b, "Deployments go to the eu-west region.")
+        self.assertEqual(self.review_ids(b), [y, x])  # newer first: chat B's item 1 is Y
+        a.on_turn_start(2, "keep 1")
+        self.assertNotEqual(a._store.get(x).kind, "candidate")
+        self.assertEqual(a._store.get(y).kind, "candidate")
+        self.assertIn(x, a._review_note)
+        b.on_turn_start(2, "keep 1")
+        self.assertNotEqual(b._store.get(y).kind, "candidate")
+
+    def test_drop_in_other_conversation_cannot_delete_this_list(self):
+        a, b = self.chat("chat-A"), self.chat("chat-B")
+        x = self._direct_candidate(a, "The database port is 5432.")
+        self.assertEqual(self.review_ids(a), [x])
+        self.now[0] += 2 * DAY
+        y = self._direct_candidate(b, "Deployments go to the eu-west region.")
+        self.assertEqual(self.review_ids(b), [y, x])
+        a.on_turn_start(2, "drop 1")
+        self.assertIsNone(a._store.get(y).deleted_at)
+        self.assertIsNotNone(a._store.get(x).deleted_at)
+
+    def test_reply_in_a_conversation_with_no_list_changes_nothing(self):
+        a, c = self.chat("chat-A"), self.chat("chat-C")
+        x = self._direct_candidate(a, "The database port is 5432.")
+        self.assertEqual(self.review_ids(a), [x])
+        c.on_turn_start(2, "keep all")
+        self.assertEqual(c._store.get(x).kind, "candidate")
+        self.assertIn("no review list is pending", c._review_note)
+        a.on_turn_start(2, "keep 1")  # chat A's list is untouched
+        self.assertNotEqual(a._store.get(x).kind, "candidate")
+
+    def check_session_switch(self, db):
+        p = self.chat("s1", db=db)
+        x = self._direct_candidate(p, "The database port is 5432.")
+        self.assertEqual(self.review_ids(p), [x])
+        # /new: a fresh conversation does not inherit the list.
+        p.on_session_switch("s2", parent_session_id="s1", reset=True, reason="new_session")
+        p.on_turn_start(2, "keep 1")
+        self.assertEqual(p._store.get(x).kind, "candidate")
+        self.assertIn("no review list is pending", p._review_note)
+        # /resume back into s1: its own list applies again.
+        p.on_session_switch("s1", parent_session_id="", reset=False)
+        self.assertEqual(self.review_ids(p), [x])
+        # Compression continues s1 under a new id: the list follows.
+        p.on_session_switch("s1-c", parent_session_id="s1", reset=False, reason="compression")
+        p.on_turn_start(3, "keep 1")
+        self.assertNotEqual(p._store.get(x).kind, "candidate")
+        self.assertIn("kept 1", p._review_note)
+
+    def test_session_switch_file_db(self):
+        self.check_session_switch(self.file_db)
+
+    def test_session_switch_memory_db(self):
+        self.check_session_switch(":memory:")
+
+    def test_memory_db_offers_are_keyed_by_session(self):
+        p = self.chat("s1", db=":memory:")
+        x = self._direct_candidate(p, "The database port is 5432.")
+        self.assertEqual(self.review_ids(p), [x])
+        p.on_session_switch("s2")
+        p.on_turn_start(2, "keep 1")
+        self.assertEqual(p._store.get(x).kind, "candidate")
+        p.on_session_switch("s1")
+        p.on_turn_start(3, "keep 1")
+        self.assertNotEqual(p._store.get(x).kind, "candidate")
+        self.now[0] += 15 * DAY
+        p.on_turn_start(4, "keep 1")  # expired by age
+        self.assertIn("no review list is pending", p._review_note)
+
+
+class WhyBoundsTests(ProviderMixin, unittest.TestCase):
+    """memory_why is clipped like recall: 1200 characters per text field, 20000 per reply."""
+
+    def big(self, i, n=6000):
+        return f"Fact {i}: " + " ".join(f"w{i}x{j}" for j in range(n // 6))[:n]
+
+    def setUp(self):
+        self.p = self.provider()
+        store = self.p._store
+        self.ids = [store.remember(self.big(i), scope=SCOPE, kind="fact").id for i in range(30)]
+        store.remember(self.big(100), scope=SCOPE, key="app.notes")
+        self.keyed = store.remember(self.big(101), scope=SCOPE, key="app.notes").id
+
+    def check(self, out, requested):
+        self.assertEqual({"result", "receipts", "missing"} - set(out), set())
+        self.assertLessEqual(len(out["result"]), MAX_TOOL_OUTPUT_CHARS + 60)
+        self.assertLessEqual(len(json.dumps(out["receipts"])), MAX_TOOL_OUTPUT_CHARS)
+        self.assertTrue(out["receipts"])
+        limit = MAX_TOOL_ITEM_CHARS + len("... [truncated, 99999 chars]")
+        for r in out["receipts"]:
+            self.assertLessEqual(len(r["content"]), limit)
+            self.assertIn("truncated", r["content"])
+            self.assertTrue({"id", "origin", "status", "replaced"} <= set(r))
+            for v in r["replaced"]:
+                self.assertLessEqual(len(v["content"]), limit)
+        self.assertEqual(len(out["receipts"]) + len(out["missing"]) + out.get("omitted", 0), requested)
+        self.assertIn("more not shown", out["result"])
+
+    def test_tool_call_with_ids(self):
+        ids = [self.keyed] + self.ids
+        out = json.loads(self.p.handle_tool_call("memory_why", {"ids": ids}))
+        self.check(out, len(ids))
+        self.assertEqual(out["receipts"][0]["id"], self.keyed)
+        self.assertTrue(out["receipts"][0]["replaced"])
+        text, data = Server(self.p._store).call_tool("memory_why", {"ids": ids})
+        self.assertEqual(text, out["result"])
+
+    def test_no_argument_path(self):
+        # What prefetch injected this turn and last turn (set directly: the packet would trim them).
+        self.p._last_ids, self.p._prev_ids = self.ids[:15], self.ids[15:]
+        out = json.loads(self.p.handle_tool_call("memory_why", {}))
+        self.check(out, 30)
+        self.assertTrue(out["result"].startswith("This turn:"))
+
+    def test_small_reply_unchanged(self):
+        mid = self.p._store.remember("Tea over coffee", scope=SCOPE).id
+        out = json.loads(self.p.handle_tool_call("memory_why", {"id": mid}))
+        self.assertEqual(out["result"], _receipt.explain(self.p._store, [mid])[0])
+        self.assertNotIn("omitted", out)
+
+
+class ReviewNoteBudgetTests(ProviderMixin, unittest.TestCase):
+    """The "Memory review" note is part of the prefetch packet and its budget."""
+
+    QUERY = "who owns the billing service"
+
+    def setUp(self):
+        self.p = self.provider()
+        cid = self._direct_candidate(self.p, "The database port is 5432.")
+        self.p.handle_tool_call("memory_review", {})
+        self.fact = self.p._store.remember("Priya owns the billing service.", scope=SCOPE).id
+        self.p.on_turn_start(2, "keep 1")
+        self.assertNotEqual(self.p._store.get(cid).kind, "candidate")
+
+    def prefetch(self, budget, query=None):
+        self.p._config["prefetch_budget_tokens"] = budget
+        return self.p.prefetch(query or self.QUERY)
+
+    def test_budget_boundary(self):
+        full = self.prefetch(10_000)
+        self.assertTrue(full.startswith("## Memory review (teresis)"))
+        self.assertIn(self.fact, full)
+        need = estimate_tokens(full)
+        self.assertEqual(self.prefetch(need), full)
+        under = self.prefetch(need - 1)
+        self.assertLessEqual(estimate_tokens(under), need - 1)
+        self.assertIn("Memory review", under)
+        self.assertNotIn(self.fact, under)
+        self.assertEqual(self.p._last_ids, [])
+
+    def test_note_alone_is_cut_to_budget(self):
+        note = self.p._review_note
+        self.assertEqual(self.prefetch(estimate_tokens(note), "ok"), note)
+        for budget in (estimate_tokens(note) - 1, 20, 3, 1):
+            out = self.prefetch(budget, "ok")
+            self.assertTrue(out)
+            self.assertLessEqual(estimate_tokens(out), budget)
+            self.assertLessEqual(estimate_tokens(self.prefetch(budget)), budget)
+        self.assertEqual(self.prefetch(0), "")
+
+    def test_long_note_drops_items_but_keeps_the_instruction(self):
+        p = self.provider()
+        for i in range(8):
+            self._direct_candidate(p, f"Claim {i}: " + " ".join(f"t{i}y{j}" for j in range(400)))
+        p.handle_tool_call("memory_review", {"limit": 8})
+        p.on_turn_start(2, "keep all")
+        self.assertIn("kept 8", p._review_note)
+        p._config["prefetch_budget_tokens"] = 400
+        out = p.prefetch("ok")
+        self.assertLessEqual(estimate_tokens(out), 400)
+        self.assertIn("kept 8", out)
+        self.assertIn("more not shown", out)
+        self.assertTrue(out.endswith("Confirm this to the user in one line."))
 
 if __name__ == "__main__":
     unittest.main()

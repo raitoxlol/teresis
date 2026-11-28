@@ -176,6 +176,57 @@ def _clip_dicts(mems) -> list[dict]:
     return out
 
 
+def _clip_receipt(r: dict) -> dict:
+    """A receipt with every text field clipped like a recalled memory; the keys are unchanged."""
+    out = {k: _clip(v) if isinstance(v, str) else v for k, v in r.items()}
+    out["replaced"] = [{k: _clip(v) if isinstance(v, str) else v for k, v in rep.items()}
+                       for rep in r.get("replaced") or []]
+    return out
+
+
+def why_reply(store: MemoryStore, groups: list[tuple[str, list[str]]]) -> tuple[str, dict]:
+    """memory_why text and data for ``(label, ids)`` groups, bounded like other tool replies.
+
+    Each text field is clipped to MAX_TOOL_ITEM_CHARS. Receipts and missing ids stop at
+    MAX_TOOL_OUTPUT_CHARS of JSON (``omitted`` counts the rest), and the text is cut at
+    MAX_TOOL_OUTPUT_CHARS. A group with a label is rendered under ``<label>:``.
+    """
+    from . import receipt as _receipt
+
+    sections: list[str] = []
+    receipts: list[dict] = []
+    missing: list[str] = []
+    used = omitted = 0
+    for label, ids in groups:
+        if not ids:
+            continue
+        _, data = _receipt.explain(store, ids)
+        shown: list[dict] = []
+        gone: list[str] = []
+        for item in [_clip_receipt(r) for r in data["receipts"]] + [_clip(i) for i in data["missing"]]:
+            size = len(json.dumps(item, default=str)) + 2  # with its ", " in the list
+            if used + size > MAX_TOOL_OUTPUT_CHARS:
+                omitted += 1
+                continue
+            used += size
+            (shown if isinstance(item, dict) else gone).append(item)
+        if not shown and not gone:
+            continue
+        text = _receipt.render(shown, gone)
+        sections.append(f"{label}:\n{text}" if label else text)
+        receipts += shown
+        missing += gone
+    text = "\n\n".join(sections) or "No memories to explain."
+    if omitted:
+        text += f"\n\n... [{omitted} more not shown; ask for fewer ids]"
+    if len(text) > MAX_TOOL_OUTPUT_CHARS:
+        text = text[:MAX_TOOL_OUTPUT_CHARS] + "\n... [truncated; ask for fewer ids]"
+    data = {"receipts": receipts, "missing": missing}
+    if omitted:
+        data["omitted"] = omitted
+    return text, data
+
+
 def _fmt(mems) -> str:
     if not mems:
         return "No memories found."
@@ -247,12 +298,10 @@ class Server:
             mems = s.history(a.get("id"), scope=a.get("scope"), key=a.get("key"))
             return _fmt(mems), {"versions": _clip_dicts(mems)}
         if name == "memory_why":
-            from . import receipt as _receipt
-
             ids = [str(i) for i in (a.get("ids") or [])] + ([str(a["id"])] if a.get("id") else [])
             if not ids:
                 raise ValueError("memory_why needs an id")
-            return _receipt.explain(s, ids)
+            return why_reply(s, [("", ids)])
         if name == "memory_feedback":
             r = s.feedback(a["id"], bool(a["helpful"]))
             return f"importance now {r['importance']}" + (" (flagged for review)" if r["flagged"] else ""), r

@@ -13,12 +13,25 @@ Unpromoted candidates expire (default 14 days) because they carry an ``expires_a
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None  # type: ignore[assignment]
+    try:
+        import msvcrt
+    except ImportError:
+        msvcrt = None  # type: ignore[assignment]
+else:
+    msvcrt = None  # type: ignore[assignment]
 
 from . import provenance as P
 from .store import DAY, Memory, MemoryStore
@@ -215,49 +228,121 @@ def parse_reply(text: str) -> list[tuple[str, str | list[int]]] | None:
 
 
 def offer_path(db_path: Any) -> Path | None:
-    """Sidecar file holding the pending review offer, next to the db. None for memory dbs."""
+    """Sidecar file holding pending review offers, next to the db. None for memory dbs."""
     if not db_path or str(db_path) == ":memory:":
         return None
     return Path(str(db_path) + ".review.json")
 
 
+# A numbered offer belongs to the conversation that showed it. Several Hermes processes
+# (a gateway and a dashboard, say) share one db and one scope, so the key is (scope,
+# session). Offers older than OFFER_MAX_AGE_DAYS are dropped and only the newest
+# OFFER_MAX_COUNT are kept, so the file stays small.
+OFFER_MAX_AGE_DAYS = 14.0
+OFFER_MAX_COUNT = 200
+
+
+def _offer_key(scope: str, session: str) -> str:
+    return json.dumps([scope, session])
+
+
+def prune_offers(offers: dict[str, Any], now: float) -> dict[str, Any]:
+    """Well-formed offers younger than OFFER_MAX_AGE_DAYS, newest OFFER_MAX_COUNT only."""
+    live = {}
+    for key, e in offers.items():
+        if (isinstance(e, dict) and isinstance(e.get("scope"), str) and isinstance(e.get("session"), str)
+                and isinstance(e.get("at"), (int, float)) and math.isfinite(e["at"])
+                and isinstance(e.get("ids"), list) and key == _offer_key(e["scope"], e["session"])
+                and now - float(e["at"]) <= OFFER_MAX_AGE_DAYS * DAY):
+            live[key] = e
+    newest = sorted(live.items(), key=lambda kv: float(kv[1]["at"]), reverse=True)
+    return dict(newest[:OFFER_MAX_COUNT])
+
+
+def put_offer(offers: dict[str, Any], scope: str, session: str, ids: list[str], now: float) -> dict[str, Any]:
+    """``offers`` with this session's offer replaced, then pruned."""
+    out = dict(offers)
+    out[_offer_key(scope, session)] = {"scope": scope, "session": session, "at": now,
+                                       "ids": [str(i) for i in ids]}
+    return prune_offers(out, now)
+
+
+def get_offer(offers: dict[str, Any], scope: str, session: str, now: float) -> list[str]:
+    """Offer ids shown in ``session`` for ``scope``; [] when absent, malformed or stale."""
+    entry = prune_offers(offers, now).get(_offer_key(scope, session))
+    return [str(i) for i in entry["ids"]] if entry else []
+
+
+def carry_offer(offers: dict[str, Any], scope: str, parent: str, child: str, now: float) -> dict[str, Any]:
+    """Copy the parent session's offer to ``child`` (a compressed or branched conversation).
+
+    The copy keeps the parent's timestamp, so it expires when the original would. A newer
+    offer already shown in ``child`` is kept.
+    """
+    live = prune_offers(offers, now)
+    src = live.get(_offer_key(scope, parent))
+    dst = live.get(_offer_key(scope, child))
+    if not src or parent == child or (dst and float(dst["at"]) >= float(src["at"])):
+        return live
+    live[_offer_key(scope, child)] = {**src, "session": child}
+    return prune_offers(live, now)
+
+
 def _read_offers(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
+    except (OSError, ValueError):
         return {}
+    offers = data.get("offers") if isinstance(data, dict) else None
+    return offers if isinstance(offers, dict) else {}
 
 
-def save_offer(path: Path, scope: str, ids: list[str], now: float) -> None:
-    """Merge ``ids`` into the pending-offer file for ``scope``, written atomically."""
-    data = _read_offers(path)
-    data[scope] = {"at": now, "ids": list(ids)}
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+@contextmanager
+def _offer_lock(path: Path) -> Iterator[None]:
+    """Exclusive lock on ``<path>.lock`` across processes. The data file itself is
+    replaced atomically, so readers never need the lock."""
+    fd = os.open(str(path) + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-        os.replace(tmp, path)
-    except BaseException:
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        elif msvcrt is not None:  # pragma: no cover - Windows
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        yield
+    finally:
+        if fcntl is None and msvcrt is not None:  # pragma: no cover - Windows
+            try:
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
+        os.close(fd)  # closing also releases a flock
+
+
+def edit_offers(path: Path, change: Callable[[dict[str, Any]], dict[str, Any]], now: float) -> None:
+    """Locked read-modify-write of the offer file, then an atomic replace."""
+    with _offer_lock(path):
+        data = {"offers": prune_offers(change(_read_offers(path)), now)}
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
         try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
 
-def load_offer(path: Path, scope: str, now: float, max_age_days: float = 14.0) -> list[str]:
-    """Pending offer ids for ``scope``; [] when absent, corrupt or stale."""
-    entry = _read_offers(path).get(scope)
-    if not isinstance(entry, dict):
-        return []
-    at = entry.get("at")
-    ids = entry.get("ids")
-    if not isinstance(at, (int, float)) or not isinstance(ids, list):
-        return []
-    if now - float(at) > max_age_days * DAY:
-        return []
-    return [str(i) for i in ids]
+def save_offer(path: Path, scope: str, session: str, ids: list[str], now: float) -> None:
+    """Record the offer ``session`` just showed for ``scope``. Other sessions' offers are kept."""
+    edit_offers(path, lambda offers: put_offer(offers, scope, session, ids, now), now)
+
+
+def load_offer(path: Path, scope: str, session: str, now: float) -> list[str]:
+    """Offer ids shown in ``session`` for ``scope``; [] when absent, corrupt or stale."""
+    return get_offer(_read_offers(path), scope, session, now)
 
 
 def apply_reply(store: MemoryStore, offer_ids: list[str], actions: list[tuple[str, Any]],

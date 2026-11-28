@@ -426,7 +426,7 @@ Config goes under `plugins.teresis` in `config.yaml`:
 | `extract_on_pre_compress` | `false` | Compaction summaries are model-written, so extraction there is off. If you turn it on, rows land in the candidate quarantine only. |
 | `candidate_ttl_days` | `14` | Unpromoted candidates expire after this many days |
 | `system_authors` / `untrusted_platforms` / `interactive_platforms` | `""` | Comma-separated additions to the built-in trust lists |
-| `prefetch_k` / `prefetch_budget_tokens` | `6` / `700` | Hard caps on the injected block: at most `prefetch_k` memories and `prefetch_budget_tokens` estimated tokens (`ceil(chars/4)`) for the whole rendered text, headers, citations and past conversation included. `0` for either disables prefetch. See [Prefetch](#prefetch-what-gets-injected). |
+| `prefetch_k` / `prefetch_budget_tokens` | `6` / `700` | Hard caps on the injected block: at most `prefetch_k` memories and `prefetch_budget_tokens` estimated tokens (`ceil(chars/4)`) for the whole rendered text, headers, citations, past conversation and the "Memory review" note included. `0` for either disables prefetch. See [Prefetch](#prefetch-what-gets-injected). |
 | `prefetch_linked` | `false` | Also admit at most one fact tied to an admitted fact by a single unambiguous entity in the same scope. See [Prefetch](#prefetch-what-gets-injected). |
 | `prefetch_min_score` | `0.45` | Score floor for automatic prefetch only. Tool `memory_recall` is not filtered. |
 
@@ -586,12 +586,17 @@ Hermes passes `turn_author` and `platform`, not an explicit origin for the turn.
 `memory_why` returns a receipt for a memory: who said it, when, on which platform and profile, what
 it replaced, and whether it is current, superseded, forgotten or still a candidate. Called with no
 arguments inside Hermes it explains what was injected this turn and last turn; the same text is
-available on the command line as `teresis why <id>`.
+available on the command line as `teresis why <id>`. As a tool reply it is clipped like recall: 1200
+characters per memory text and 20000 for the reply.
 
 `memory_review` lists the candidates Teresis is holding for approval, numbered for the user. Only a
 reply typed by the user — `keep 1 3`, `drop 2`, `keep all` — approves or rejects them; the model
-cannot promote a candidate itself. The pending list is stored next to the database as
-`<db>.review.json` and expires after 14 days.
+cannot promote a candidate itself. A reply applies only to the list shown in the same conversation
+(Hermes session): two chats on one database and scope each keep their own numbering, and a reply in a
+chat with no list changes nothing. A conversation that Hermes compresses or branches under a new
+session id keeps its list; `/new` does not. Pending lists are stored next to the database in
+`<db>.review.json` (written under `<db>.review.json.lock` and replaced atomically, so several Hermes
+processes can share it). Each expires after 14 days, and only the newest 200 are kept.
 
 ### Cleanup
 
