@@ -1,12 +1,12 @@
 {
- "start": "2026-11-23T04:53:21.303Z",
+ "start": "2026-11-23T20:39:58.564Z",
  "round": 0,
  "idle": 0,
  "errors": 0,
  "status": "pass",
  "history": [
   {
-   "at": "2026-11-23T06:30:46.032Z",
+   "at": "2026-11-23T20:42:03.061Z",
    "mode": "manual",
    "status": "pass",
    "fails": 0,
@@ -24,83 +24,47 @@
   "category": "local long-term memory for AI agents",
   "primary": "Install Teresis",
   "rounds": 3,
-  "start": "2026-11-23T04:53:21.303Z",
+  "start": "2026-11-23T20:39:58.564Z",
   "by": "gate.mjs --start"
  },
  "manual": true,
- "fp": "2ab7d07cee87e7fc",
+ "fp": "132d912033f71513",
  "page": "dist-check/index.html",
  "found": {
   "fails": [
    {
-    "check": "scroll-reveal",
-    "where": "div.grid.bento > article.card.card--row:nth-of-type(1) > div.panel.dg-panel > div.dg \"memory.db Hermes Agent Claude Code Codex\"",
-    "msg": "starts \"color\" (0.9 s) the moment it is scrolled into view (an IntersectionObserver) on div.dg-node.dg-node--core-pill",
-    "fix": "show it at rest: no fade, rise or unmask when it is scrolled into view",
+    "check": "one-section",
+    "where": "div.wrap > div.hero-text > div.hero-visual > div.hero-terminal.ui \"teresis · zshmemory.db$ teresis remember\"",
+    "msg": "a band: a box 89% of the section wide on a ground of its own that holds only text: the section's own ground is the band (SR-4)",
+    "fix": "put every block of <main> in a <section>, and give a band its own section instead of a ground inside one",
     "widths": [
      1440
     ],
     "from": "consistency",
     "ids": [
-     "scroll-reveal"
+     "one-section"
     ],
     "wheres": [
-     "div.grid.bento > article.card.card--row:nth-of-type(1) > div.panel.dg-panel > div.dg \"memory.db Hermes Agent Claude Code Codex\""
-    ]
-   },
-   {
-    "check": "scroll-reveal",
-    "where": "div.grid.bento > article.card.card--row:nth-of-type(1) > div.panel.dg-panel > div.dg \"Hermes Agent Claude Code Codex Cursor\"",
-    "msg": "starts \"color\" (0.9 s) the moment it is scrolled into view (an IntersectionObserver) on div.dg-node.dg-node--pill:nth-of-type(2)",
-    "fix": "show it at rest: no fade, rise or unmask when it is scrolled into view",
-    "widths": [
-     390
-    ],
-    "from": "consistency",
-    "ids": [
-     "scroll-reveal"
-    ],
-    "wheres": [
-     "div.grid.bento > article.card.card--row:nth-of-type(1) > div.panel.dg-panel > div.dg \"Hermes Agent Claude Code Codex Cursor\""
+     "div.wrap > div.hero-text > div.hero-visual > div.hero-terminal.ui \"teresis · zshmemory.db$ teresis remember\""
     ]
    }
   ],
   "warns": [
    {
-    "check": "cut-text",
-    "where": "article.card.card--row:nth-of-type(3) > div.panel.viz > div.viz__row:nth-of-type(4) > span \"project/helios\"",
-    "msg": "sits across the edge of a panel behind it (and 1 more like it: \"never read\")",
-    "fix": "give the text room: no overflow clipping a line, no line past its box",
+    "check": "overlap-text",
+    "where": "div.dg > div.dg-nodes > div.dg-node.dg-node--core-pill > span.dg-label \"memory.db\"",
+    "msg": "inside div.hub-panel.panel, a box sits on the mock's own text and hides it mid-line (\"memory.db\")",
+    "fix": "move the box off the text (or the text off the box)",
     "widths": [
      1440
     ],
     "from": "consistency"
    },
    {
-    "check": "cut-text",
-    "where": "p.t-stat.mo-cr > span.mo-cr__col:nth-of-type(1) > span.mo-cr__strip > span:nth-of-type(2) \"2\"",
-    "msg": "cut 40px at the bottom by the overflow of div.grid.stats > div.stat.span-3:nth-of-type(1) > p.t-stat.mo-cr > span.mo-cr__col:nth-of-type(1) (inside a held section or scroll scene, whose motion --quick does not check) (and 10 more like it: \"1\", \"1\", \"2\", \"1\", ...)",
-    "fix": "give the text room: no overflow clipping a line, no line past its box",
-    "widths": [
-     1440
-    ],
-    "from": "consistency"
-   },
-   {
-    "check": "scroll-reveal",
-    "where": "section#benchmarks > div.wrap > div.grid > div.grid.stats \"1 2 3 4 5 6 7 8 9 0 1 0 1 2 3 4 5 6 7 8 \"",
-    "msg": "starts an animation (1.4 s) the moment it is scrolled into view (an IntersectionObserver) on span.mo-cr__strip (inside a dealt moment's section, [data-moment]: an enter moment is expected on every kind; its still is judged under reduced motion)",
-    "fix": "show it at rest: no fade, rise or unmask when it is scrolled into view",
-    "widths": [
-     1440
-    ],
-    "from": "consistency"
-   },
-   {
-    "check": "button-styles",
-    "where": "button#tabbtn-1 \"Add to Hermes\"",
-    "msg": "the selected tab \"Add to Hermes\" is drawn as a filled soft in #f1e9d6 (its sliding indicator), a fill none of the page's buttons use (#d9af5b): it reads as one more button style",
-    "fix": "draw the selected tab as a line under its word, or in the primary button's fill",
+    "check": "card-layout",
+    "where": "section#how > div.wrap.how-wrap > div.group.how-cards-group > div.method-cards \"One file keeps it all. One SQLite file h\"",
+    "msg": "4 cards with 1 placement of their UI (vary them: rise, corner, a low stack, right)",
+    "fix": "vary the cards of a group: at least three placements, and the ground in its own light on each",
     "widths": [
      1440,
      390
@@ -109,8 +73,8 @@
    },
    {
     "check": "copy-headings",
-    "where": "div.wrap > div.grid.bento > article.card.card--row:nth-of-type(2) > h3 \"Replaces a changed fact\"",
-    "msg": "the card title \"Replaces a changed fact\" names no product, part, place or section (4 card titles like it) (and 3 more like it: \"Reads parents, never sib\", \"Finds stems and typos\", \"Writes without a model\")",
+    "where": "div.group.how-cards-group > div.method-cards > article.method-card.card:nth-of-type(1) > h3 \"One file keeps it all.\"",
+    "msg": "the card title \"One file keeps it all.\" names no product, part, place or section (3 card titles like it) (and 2 more like it: \"New facts replace old on\", \"Stems, typos, then vecto\")",
     "fix": "name the thing in every heading: the product, a part, the place or a section noun",
     "widths": [
      1440
@@ -118,29 +82,40 @@
     "from": "consistency"
    },
    {
-    "check": "contrast",
-    "where": "p.t-stat.mo-cr > span.mo-cr__col:nth-of-type(3) > span.mo-cr__strip > span:nth-of-type(23) \"2\"",
-    "msg": "large text over a effect reads at 1.0:1 at its worst tenth (needs 3:1) (inside a held section or scroll scene, whose motion --quick does not check) (and 87 more like it: \"3\", \"4\", \"5\", \"6\", ...)",
-    "fix": "put the text on a calm part of the picture, or on a solid panel",
+    "check": "copy-actions",
+    "where": "(the page)",
+    "msg": "the main action \"Install Teresis\" does not read word for word the same in the closing section",
+    "fix": "few actions, one wording: at most 2 in the hero, the main action word for word in nav, hero and close",
     "widths": [
      1440
     ],
     "from": "consistency"
    },
    {
-    "check": "text-contrast",
-    "where": "div.ui-win__main > ul.ui-win__rows > li.ui-win__row:nth-of-type(1) > span.ui-avatar \"us\"",
-    "msg": "10 lines of text in drawn mocks read under 4.5:1 (5 colour pairs), the worst \"us\" in #ad7c67 on #575a47 at 1.98:1",
-    "fix": "lift the mocks' muted text (labels, meta, initials) to 4.5:1 on their own panel, or set it larger",
+    "check": "heading-scale",
+    "where": "h2#try-title \"Run Teresis in a guided terminal\"",
+    "msg": "h2 headings in 2 sizes, 49px (\"Teresis benchmark result\") to 60px (x1.22)",
+    "fix": "size headings by level: the h1 largest, one size per level, each level below the one above",
     "widths": [
      1440
+    ],
+    "from": "consistency"
+   },
+   {
+    "check": "section-gaps",
+    "where": "section#install / section#questions",
+    "msg": "uneven space at the edge of a band: 72px outside its edge, 114px inside it (the space on either side of a change of ground reads as one gap only when the two match)",
+    "fix": "use one gap between sections (all within 25% of each other)",
+    "widths": [
+     1440,
+     390
     ],
     "from": "consistency"
    },
    {
     "check": "nav-labels",
-    "where": "div.wrap.nav__bar > nav.nav__links > div.nav__item:nth-of-type(1) > a.nav__link \"Memory\"",
-    "msg": "\"Memory\" opens a section headed \"Facts with their scope and history\"",
+    "where": "div.wrap.nav__bar > nav.nav__links > div.nav__item:nth-of-type(1) > a.nav__link \"Try it\"",
+    "msg": "\"Try it\" opens a section headed \"Run Teresis in a guided terminal\"",
     "fix": "name each nav link after the heading of the section it opens",
     "widths": [
      1440
@@ -158,60 +133,9 @@
     "from": "consistency"
    },
    {
-    "check": "nav-labels",
-    "where": "div.wrap.nav__bar > nav.nav__links > div.nav__item:nth-of-type(3) > a.nav__link \"Benchmarks\"",
-    "msg": "\"Benchmarks\" opens a section headed \"100 of 100 on a live Hermes test\"",
-    "fix": "name each nav link after the heading of the section it opens",
-    "widths": [
-     1440
-    ],
-    "from": "consistency"
-   },
-   {
-    "check": "tab-wrap",
-    "where": "button#tabbtn-4 \"Import in Python\"",
-    "msg": "the row of 4 tabs wraps onto 2 lines and leaves \"Import in Python\" alone on the last",
-    "fix": "fit the tabs on one line at this width (shorter labels, a scrolling row), or let them stack evenly",
-    "widths": [
-     1440,
-     390
-    ],
-    "from": "consistency"
-   },
-   {
-    "check": "fade-cut",
-    "where": "div.ui-win__main > ul.ui-win__rows > li.ui-win__row:nth-of-type(8) > span.ui-win__sub \"Helios deploys from the main branch\"",
-    "msg": "a line of div.ui.ui-panel fades out under its edge (\"Helios deploys from th\"): drawn at a fraction of #b8cbb4 on #123a2a, half-erased",
-    "fix": "fit the mock's rows inside its panel (fewer rows, a taller panel), or end the fade below the last whole row: no row half-erased",
-    "widths": [
-     1440
-    ],
-    "from": "consistency"
-   },
-   {
-    "check": "fade-cut",
-    "where": "div#screen-1 > div.ui.ui-panel > button.copy \"Copy\"",
-    "msg": "a line of div.ui.ui-panel fades out under its edge (\"Copy\"): drawn at a fraction of #b8cbb4 on #2d3a33, half-erased",
-    "fix": "fit the mock's rows inside its panel (fewer rows, a taller panel), or end the fade below the last whole row: no row half-erased",
-    "widths": [
-     1440
-    ],
-    "from": "consistency"
-   },
-   {
     "check": "copy-length",
-    "where": "h2#keeps-h \"Your agents forget. Teresis keeps.\"",
-    "msg": "a section heading of 5 words on 4 lines at 129.6px: a paragraph set in display type",
-    "fix": "cut the heading to one short line (2 to 12 words) and move the rest into the text under it",
-    "widths": [
-     1440
-    ],
-    "from": "consistency"
-   },
-   {
-    "check": "copy-length",
-    "where": "section#public \"LongMemEval and LoCoMo results\"",
-    "msg": "3 sections over 90 words a screen outside the UI mocks (\"LongMemEval and LoCoMo r\" 219, \"How Teresis keeps facts \" 143, \"Questions\" 141); 95 words a screen across the page (756 words in 8 screens): a tech page says it in about 80 or fewer",
+    "where": "section#try \"Run Teresis in a guided terminal\"",
+    "msg": "3 sections over 90 words a screen outside the UI mocks (\"Run Teresis in a guided \" 150, \"Questions about Teresis\" 150, \"Works with agents and AP\" 101); 76 words a screen across the page (604 words in 8 screens): a tech page says it in about 80 or fewer",
     "fix": "cut every section to its heading, one line and the product UI: the UI says the rest; no second paragraph, no list of feature sentences",
     "widths": [
      1440
@@ -219,10 +143,20 @@
     "from": "consistency"
    },
    {
-    "check": "nav-current",
-    "where": "div#root > header.nav.nav--centre",
-    "msg": "the nav stays on screen with 4 links to the page's sections, but never marks the one you are in (no link changes as the page scrolls)",
-    "fix": "mark the link of the section on screen (a colour, a weight or a line under it) as the visitor scrolls",
+    "check": "visual-caption",
+    "where": "div.hero-terminal.ui > div.hero-transcript > div.transcript-command:nth-of-type(4) > div.output-line:nth-of-type(3) \"Editor is Neovim\"",
+    "msg": "a muted 14px line of 1 row sits 0px under the drawing (svg): it reads as a caption: \"Editor is Neovim\"; no caption or description under any image, render or visual (house rule)",
+    "fix": "take the line away: no caption or description under, over or on any image, render or visual; a licence credit goes in one footer line",
+    "widths": [
+     1440
+    ],
+    "from": "consistency"
+   },
+   {
+    "check": "visual-empty",
+    "where": "section#keeps > div.wrap.statement-wrap > svg.lotus.keeps-mark \"drawing (svg)\"",
+    "msg": "the drawing (svg) is nearly empty at 1440px: 5 colours in its 737x680px, 65.4% one colour (a thin line drawing or a logo can be this plain: look at it)",
+    "fix": "make the visual draw at this width: a picture that loads, an effect that renders, or its still fallback; never an empty ground or frame",
     "widths": [
      1440
     ],
@@ -239,20 +173,53 @@
     "from": "consistency"
    },
    {
-    "check": "nav",
-    "where": "div#root > header.nav.nav--centre > div.wrap.nav__bar > button.nav__toggle",
-    "msg": "the nav is lopsided: its last item ends 13px inside the content's edge (366px), while its first starts on the other edge",
-    "fix": "start the nav's first item and end its last on the content's two edges",
+    "check": "section-air",
+    "where": "section#install / section#questions",
+    "msg": "507px of air between the content of these two sections: 128-480px (64-600px WARN) (SR-3)",
+    "fix": "keep 128-480px of air between the content of neighbouring sections (112-420px on a phone): the sections' padding (--padt, --padb)",
     "widths": [
-     390
+     1440
     ],
     "from": "consistency"
    },
    {
-    "check": "cut-text",
-    "where": "div.ui.ui-panel > pre.ui-code__pre > code > span.ui-code__ln:nth-of-type(9) \"e49ec32acb4f4da0 [fact · project/atlas ·\"",
-    "msg": "cut 8px at the bottom by the overflow of section#memory > div.wrap > div.ui.app > div.app__pane.app__pane--open: a fragment run out through its panel's edge",
-    "fix": "give the text room: no overflow clipping a line, no line past its box",
+    "check": "tap-size",
+    "where": "div#root > header.nav.nav--centre > div.wrap.nav__bar > a.brand-lockup",
+    "msg": "a 96x35px tap target: under the 44px a phone needs",
+    "fix": "make every link and control outside running text 44px tall on a phone: display: inline-flex; align-items: center; min-height: 44px (a footer list then needs no gap), a 44px small button, or a transparent ::before laid past the box",
+    "widths": [
+     390,
+     320
+    ],
+    "from": "consistency"
+   },
+   {
+    "check": "tap-size",
+    "where": "div.closing-links > div.footer-columns > div.footer-news > a.brand-lockup.brand-lockup--footer",
+    "msg": "a 96x35px tap target: under the 44px a phone needs",
+    "fix": "make every link and control outside running text 44px tall on a phone: display: inline-flex; align-items: center; min-height: 44px (a footer list then needs no gap), a 44px small button, or a transparent ::before laid past the box",
+    "widths": [
+     390,
+     320
+    ],
+    "from": "consistency"
+   },
+   {
+    "check": "tap-size",
+    "where": "div.closing-links > div.footer-columns > div.footer-col:nth-of-type(2) > a:nth-of-type(1) \"Try it\"",
+    "msg": "a 230x26px tap target (and 3 more like it on this screen): under the 44px a phone needs",
+    "fix": "make every link and control outside running text 44px tall on a phone: display: inline-flex; align-items: center; min-height: 44px (a footer list then needs no gap), a 44px small button, or a transparent ::before laid past the box",
+    "widths": [
+     390,
+     320
+    ],
+    "from": "consistency"
+   },
+   {
+    "check": "no-visual",
+    "where": "section#works-with \"Works with agents and APIs\"",
+    "msg": "pictures, effects and mocks cover 18% of this section; a feature section needs a visual (about 25% or more)",
+    "fix": "give the section a visual: a UI fragment on a ground, real icons, or a photograph that fits",
     "widths": [
      390
     ],
@@ -260,29 +227,9 @@
    },
    {
     "check": "cta",
-    "where": "section#how \"How Teresis keeps facts straight\"",
+    "where": "section#works-with \"Works with agents and APIs\"",
     "msg": "a section over 1.5 screens long with no link or button in it",
     "fix": "add the action: a button in the hero, one on every priced item, one in the closing section",
-    "widths": [
-     390
-    ],
-    "from": "consistency"
-   },
-   {
-    "check": "cta",
-    "where": "section#public \"LongMemEval and LoCoMo results\"",
-    "msg": "a section over 1.5 screens long with no link or button in it",
-    "fix": "add the action: a button in the hero, one on every priced item, one in the closing section",
-    "widths": [
-     390
-    ],
-    "from": "consistency"
-   },
-   {
-    "check": "section-gaps",
-    "where": "section#public / section#install",
-    "msg": "209px between these sections, +46% against the median 144px",
-    "fix": "use one gap between sections (all within 25% of each other)",
     "widths": [
      390
     ],
@@ -290,8 +237,8 @@
    },
    {
     "check": "proximity",
-    "where": "section#install > div.wrap > div.grid > div.frame.frame--split \"Four interfaces to one Teresis file A He\"",
-    "msg": "stacked at this width, the visual starts 15px under the text and buttons above it (\"Four interfaces to one Teresis\"): it reads glued to them",
+    "where": "section#benchmarks > div.wrap > div.bench-interface.ui \"Teresis benchmark results Compare the li\"",
+    "msg": "stacked at this width, the visual starts 20px under the text and buttons above it (\"Teresis benchmark results Comp\"): it reads glued to them",
     "fix": "give the stacked split the section's own gap between text and visual (40px or more on a phone)",
     "widths": [
      390
@@ -299,58 +246,51 @@
     "from": "consistency"
    },
    {
+    "check": "tab-wrap",
+    "where": "button#install-tab-4 \"Python\"",
+    "msg": "the row of 5 tabs wraps onto 2 lines and leaves \"Python\" alone on the last",
+    "fix": "fit the tabs on one line at this width (shorter labels, a scrolling row), or let them stack evenly",
+    "widths": [
+     390
+    ],
+    "from": "consistency"
+   },
+   {
     "check": "copy-stat-strip",
-    "msg": "stat strip x3",
+    "msg": "stat strip x1",
     "fix": "a strip only of figures the brief gives (a price, hours, a count); otherwise put each number in the sentence it proves, or leave it out (references/copy-tells.md)",
     "widths": [],
     "from": "copy",
-    "where": "copy x3: \"17 ms / 0 / 4\", \"40 / 40 / 21 / 20 / 2...\", \"0.718 / 738 ms / 0.66...\"",
+    "where": "copy x1: \"4 / 5 / 6 / 7 / 8 / 9\"",
     "exact": false
    }
   ],
   "crashed": [],
   "seconds": {
-   "consistency": 112,
-   "layout": 4
+   "consistency": 121,
+   "layout": 3
   }
  },
  "open": [],
  "waived": [
   {
-   "check": "scroll-reveal",
-   "where": "div.grid.bento > article.card.card--row:nth-of-type(1) > div.panel.dg-panel > div.dg \"memory.db Hermes Agent Claude Code Codex\"",
-   "msg": "starts \"color\" (0.9 s) the moment it is scrolled into view (an IntersectionObserver) on div.dg-node.dg-node--core-pill",
-   "fix": "show it at rest: no fade, rise or unmask when it is scrolled into view",
+   "check": "one-section",
+   "where": "div.wrap > div.hero-text > div.hero-visual > div.hero-terminal.ui \"teresis · zshmemory.db$ teresis remember\"",
+   "msg": "a band: a box 89% of the section wide on a ground of its own that holds only text: the section's own ground is the band (SR-4)",
+   "fix": "put every block of <main> in a <section>, and give a band its own section instead of a ground inside one",
    "widths": [
     1440
    ],
    "from": "consistency",
    "ids": [
-    "scroll-reveal"
+    "one-section"
    ],
    "wheres": [
-    "div.grid.bento > article.card.card--row:nth-of-type(1) > div.panel.dg-panel > div.dg \"memory.db Hermes Agent Claude Code Codex\""
+    "div.wrap > div.hero-text > div.hero-visual > div.hero-terminal.ui \"teresis · zshmemory.db$ teresis remember\""
    ],
-   "reason": "The kit's own hub diagram (assets/diagrams/diagram.js, unchanged) lights its nodes while its card is on screen; diagrams.md Motion: 'It runs only on screen'. Not a page-written reveal."
-  },
-  {
-   "check": "scroll-reveal",
-   "where": "div.grid.bento > article.card.card--row:nth-of-type(1) > div.panel.dg-panel > div.dg \"Hermes Agent Claude Code Codex Cursor\"",
-   "msg": "starts \"color\" (0.9 s) the moment it is scrolled into view (an IntersectionObserver) on div.dg-node.dg-node--pill:nth-of-type(2)",
-   "fix": "show it at rest: no fade, rise or unmask when it is scrolled into view",
-   "widths": [
-    390
-   ],
-   "from": "consistency",
-   "ids": [
-    "scroll-reveal"
-   ],
-   "wheres": [
-    "div.grid.bento > article.card.card--row:nth-of-type(1) > div.panel.dg-panel > div.dg \"Hermes Agent Claude Code Codex Cursor\""
-   ],
-   "reason": "Same kit diagram at 390: diagram.js holds its still there and applies the lit state when the card is on screen; no page-written reveal."
+   "reason": "The hero's window is the product mock (a real Teresis CLI transcript with the lotus mark beside it), not a text band on a second ground; the checker reads a terminal as text only."
   }
  ],
- "warnCount": 24,
- "at": "2026-11-23T06:30:46.033Z"
+ "warnCount": 21,
+ "at": "2026-11-23T20:42:03.061Z"
 }

@@ -1,22 +1,19 @@
 <!doctype html>
-<html lang="en" data-type="software" data-radius="sharp" data-buttons="solid" data-motion>
+<html lang="en" data-type="software" data-radius="sharp" data-buttons="pill" data-motion>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Teresis: local long-term memory for AI agents</title>
-<meta name="description" content="One SQLite file that Hermes, Claude Code, Codex and other MCP clients share. Facts supersede with history, and writes make zero LLM calls.">
+<meta name="description" content="One SQLite file shared by Hermes, Claude Code, Codex and other MCP clients. Facts keep their history, and writes make zero LLM calls.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Teresis: local long-term memory for AI agents">
-<meta property="og:description" content="One SQLite file that Hermes, Claude Code, Codex and other MCP clients share. Facts supersede with history, and writes make zero LLM calls.">
+<meta property="og:description" content="One SQLite file shared by Hermes, Claude Code, Codex and other MCP clients. Facts keep their history, and writes make zero LLM calls.">
 <meta property="og:image" content="https://www.raitox.tech/teresis/og-card.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="%BASE_URL%favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#123a2a">
 <meta name="site-kind" content="software">
 <meta name="page-type" content="software">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wdth,wght@75..100,400..700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="%BASE_URL%assets/system.css">
 <link rel="stylesheet" href="%BASE_URL%assets/ui/cards.css">
 <link rel="stylesheet" href="%BASE_URL%assets/motion/motion.css">
@@ -29,19 +26,19 @@
   --p-accent: #d9af5b; --p-accent-ink: #123a2a; --p-action: #d9af5b; --p-action-ink: #123a2a;
   --p-inv-bg: #f1e9d6; --p-inv-surface: #e0dcc9; --p-inv-ink: #123a2a; --p-inv-muted: #486250;
   --p-inv-accent: #123a2a; --p-inv-accent-ink: #f1e9d6; --p-inv-action: #123a2a; --p-inv-action-ink: #f1e9d6;
-  --font-display: "Instrument Sans", system-ui, sans-serif;
-  --font-text: "Instrument Sans", system-ui, sans-serif;
-  --font-mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --display-weight: 500;
-  --display-tracking: -0.028em;
-  --display-tracking-xl: -0.036em;
-  --display-stretch: 96%;
-  --ly-scale: 1.04;
+  --font-display: Cormorant, Georgia, serif;
+  --font-text: Allo, system-ui, sans-serif;
+  --font-mono: "Fragment Mono", ui-monospace, monospace;
+  --display-weight: 400;
+  --display-tracking: -0.02em;
+  --display-tracking-xl: -0.025em;
+  --display-stretch: 100%;
+  --ly-scale: 1;
 }
 </style>
+<link rel="stylesheet" href="%BASE_URL%assets/backgrounds/backgrounds.css">
 <link rel="stylesheet" href="%BASE_URL%assets/ui/base.css">
 <link rel="stylesheet" href="%BASE_URL%assets/ui/window/fragment.css">
-<link rel="stylesheet" href="%BASE_URL%assets/ui/terminal-run/fragment.css">
 <link rel="stylesheet" href="%BASE_URL%assets/ui/code/fragment.css">
 <link rel="stylesheet" href="%BASE_URL%assets/diagrams/diagram.css">
 <script>document.documentElement.classList.add('m-enter');setTimeout(()=>document.documentElement.classList.add('m-enter-done'),700)</script>
@@ -49,7 +46,6 @@
 <script>document.documentElement.classList.add('mo-js');setTimeout(()=>document.documentElement.classList.add('mo-safe'),2500)</script>
 <link rel="modulepreload" href="%BASE_URL%assets/moments/moments.js">
 <link rel="modulepreload" href="%BASE_URL%assets/moments/lib.js">
-<link rel="modulepreload" href="%BASE_URL%assets/moments/liquid-type/moment.js">
 <link rel="modulepreload" href="%BASE_URL%assets/moments/counter-rolls/moment.js">
 </head>
 <body>
@@ -59,18 +55,6 @@
 <script type="module" src="%BASE_URL%assets/motion/motion.js" vite-ignore></script>
 <script type="module" src="%BASE_URL%assets/layout/layout.js" vite-ignore></script>
 <script type="module" src="%BASE_URL%assets/diagrams/mount.js" vite-ignore></script>
-<script type="module">
-  for (const b of document.querySelectorAll('.copy[data-copy]')) {
-    b.addEventListener('click', async () => {
-      const pre = b.closest('.screen')?.querySelector('pre');
-      if (!pre) return;
-      try {
-        await navigator.clipboard.writeText(pre.textContent.trim());
-        b.textContent = 'Copied';
-        setTimeout(() => { b.textContent = 'Copy'; }, 1600);
-      } catch { /* clipboard unavailable */ }
-    });
-  }
-</script>
+<script type="module" src="%BASE_URL%assets/moments/moments.js" vite-ignore></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
 [
-  {"check": "scroll-reveal", "target": "div.dg \"memo", "reason": "The kit's own hub diagram (assets/diagrams/diagram.js, unchanged) lights its nodes while its card is on screen; diagrams.md Motion: 'It runs only on screen'. Not a page-written reveal."},
-  {"check": "scroll-reveal", "target": "div.dg \"Herm", "reason": "Same kit diagram at 390: diagram.js holds its still there and applies the lit state when the card is on screen; no page-written reveal."}
+  {"check": "one-section", "target": "div.hero-terminal", "reason": "The hero's window is the product mock (a real Teresis CLI transcript with the lotus mark beside it), not a text band on a second ground; the checker reads a terminal as text only."},
+  {"check": "scroll-reveal", "target": "div.dg", "reason": "The kit's own hub diagram (assets/diagrams/diagram.js, unchanged) pulses its nodes while its card is on screen; diagrams.md Motion: 'It runs only on screen'. Not a page-written reveal."}
 ]
