@@ -236,9 +236,11 @@ def offer_path(db_path: Any) -> Path | None:
 
 # A numbered offer belongs to the conversation that showed it. Several Hermes processes
 # (a gateway and a dashboard, say) share one db and one scope, so the key is (scope,
-# session). Offers older than OFFER_MAX_AGE_DAYS are dropped and only the newest
-# OFFER_MAX_COUNT are kept, so the file stays small.
-OFFER_MAX_AGE_DAYS = 14.0
+# session). It can be answered only right after it is shown: the provider closes it on the
+# first turn that is not a keep/drop reply, so a later "drop 2" about some other numbered
+# list cannot reach it. Offers older than OFFER_MAX_AGE_HOURS are dropped and only the
+# newest OFFER_MAX_COUNT are kept, so the file stays small.
+OFFER_MAX_AGE_HOURS = 24.0
 OFFER_MAX_COUNT = 200
 
 
@@ -247,13 +249,13 @@ def _offer_key(scope: str, session: str) -> str:
 
 
 def prune_offers(offers: dict[str, Any], now: float) -> dict[str, Any]:
-    """Well-formed offers younger than OFFER_MAX_AGE_DAYS, newest OFFER_MAX_COUNT only."""
+    """Well-formed offers younger than OFFER_MAX_AGE_HOURS, newest OFFER_MAX_COUNT only."""
     live = {}
     for key, e in offers.items():
         if (isinstance(e, dict) and isinstance(e.get("scope"), str) and isinstance(e.get("session"), str)
                 and isinstance(e.get("at"), (int, float)) and math.isfinite(e["at"])
                 and isinstance(e.get("ids"), list) and key == _offer_key(e["scope"], e["session"])
-                and now - float(e["at"]) <= OFFER_MAX_AGE_DAYS * DAY):
+                and now - float(e["at"]) <= OFFER_MAX_AGE_HOURS * 3600.0):
             live[key] = e
     newest = sorted(live.items(), key=lambda kv: float(kv[1]["at"]), reverse=True)
     return dict(newest[:OFFER_MAX_COUNT])
@@ -271,6 +273,23 @@ def get_offer(offers: dict[str, Any], scope: str, session: str, now: float) -> l
     """Offer ids shown in ``session`` for ``scope``; [] when absent, malformed or stale."""
     entry = prune_offers(offers, now).get(_offer_key(scope, session))
     return [str(i) for i in entry["ids"]] if entry else []
+
+
+def offer_shown_at(offers: dict[str, Any], scope: str, session: str, now: float) -> float | None:
+    """When ``session``'s live offer for ``scope`` was shown; None when there is none."""
+    entry = prune_offers(offers, now).get(_offer_key(scope, session))
+    return float(entry["at"]) if entry else None
+
+
+def close_offer(offers: dict[str, Any], scope: str, session: str, now: float,
+                shown_at: float | None = None) -> dict[str, Any]:
+    """``offers`` without ``session``'s offer for ``scope``, pruned. With ``shown_at``, only an
+    offer shown at or before that time is removed, so one written meanwhile is kept."""
+    live = prune_offers(offers, now)
+    key = _offer_key(scope, session)
+    if key in live and (shown_at is None or float(live[key]["at"]) <= shown_at):
+        del live[key]
+    return live
 
 
 def carry_offer(offers: dict[str, Any], scope: str, parent: str, child: str, now: float) -> dict[str, Any]:
@@ -343,6 +362,16 @@ def save_offer(path: Path, scope: str, session: str, ids: list[str], now: float)
 def load_offer(path: Path, scope: str, session: str, now: float) -> list[str]:
     """Offer ids shown in ``session`` for ``scope``; [] when absent, corrupt or stale."""
     return get_offer(_read_offers(path), scope, session, now)
+
+
+def expire_offer(path: Path, scope: str, session: str, now: float) -> bool:
+    """Close ``session``'s offer for ``scope``. The file is read without the lock first and
+    written (locked, atomic) only when there is an offer to close. True when one was closed."""
+    shown_at = offer_shown_at(_read_offers(path), scope, session, now)
+    if shown_at is None:
+        return False
+    edit_offers(path, lambda offers: close_offer(offers, scope, session, now, shown_at), now)
+    return True
 
 
 def apply_reply(store: MemoryStore, offer_ids: list[str], actions: list[tuple[str, Any]],

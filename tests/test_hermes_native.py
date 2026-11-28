@@ -42,9 +42,10 @@ def _exercise_review(manager, provider):
     # sync_all is queued on the manager's background worker, so poll the store.
     manager.sync_all("My database port is 5432.", "Understood.")
     manager.sync_all("We run Postgres on staging.", "Understood.")
-    assert _wait_for(lambda: len(_active_candidates(provider)) >= 2), _active_candidates(provider)
+    manager.sync_all("We deploy with Ansible.", "Understood.")
+    assert _wait_for(lambda: len(_active_candidates(provider)) >= 3), _active_candidates(provider)
     candidates = _active_candidates(provider)
-    assert len(candidates) == 2, candidates
+    assert len(candidates) == 3, candidates
 
     query = "what port does the kestrel worker listen on"
     manager.on_turn_start(1, query, author_id=None, author_name=None, author_is_bot=False)
@@ -58,7 +59,7 @@ def _exercise_review(manager, provider):
     assert "This turn" in out["result"] and "you said this" in out["result"], out
 
     listed = json.loads(manager.handle_tool_call("memory_review", {}))
-    assert listed["waiting"] == 2 and len(listed["items"]) == 2, listed
+    assert listed["waiting"] == 3 and len(listed["items"]) == 3, listed
 
     # The model cannot approve: extra args are ignored, both rows stay candidates.
     manager.handle_tool_call("memory_review", {"keep": [1, 2], "action": "promote"})
@@ -86,6 +87,16 @@ def _exercise_review(manager, provider):
                               reason="compression")
     manager.on_turn_start(4, "drop 2", author_id=None, author_name=None, author_is_bot=False)
     assert provider._store.get(second).deleted_at is not None, provider._store.get(second).to_dict()
+    # Consecutive replies all applied. The first message that is not a reply closes the list,
+    # so a "drop 3" about the model's own numbered list cannot touch item 3.
+    third = listed["items"][2]["id"]
+    manager.on_turn_start(5, "Suggest three names for the release.", author_id=None, author_name=None,
+                          author_is_bot=False)
+    manager.on_turn_start(6, "drop 3", author_id=None, author_name=None, author_is_bot=False)
+    text = manager.prefetch_all("drop 3", session_id="native-review-2")
+    assert provider._store.get(third).deleted_at is None, provider._store.get(third).to_dict()
+    assert provider._store.get(third).kind == "candidate"
+    assert "nothing was changed" in text and "memory_review" in text, text
 
 
 def exercise_provider(phase):

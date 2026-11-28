@@ -17,6 +17,7 @@ from teresis.store import DAY, MemoryStore
 from teresis.text import estimate_tokens
 
 SCOPE = "hermes/max"
+HOUR = 3600.0
 
 
 class StoreMixin:
@@ -270,10 +271,27 @@ class OfferStoreTests(unittest.TestCase):
 
     def test_old_offers_expire_and_are_pruned(self):
         _review.save_offer(self.path, SCOPE, "old", ["x"], T0)
-        self.assertEqual(_review.load_offer(self.path, SCOPE, "old", T0 + 13 * DAY), ["x"])
-        self.assertEqual(_review.load_offer(self.path, SCOPE, "old", T0 + 15 * DAY), [])
-        _review.save_offer(self.path, SCOPE, "new", ["y"], T0 + 15 * DAY)
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "old", T0 + 23 * HOUR), ["x"])
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "old", T0 + 25 * HOUR), [])
+        _review.save_offer(self.path, SCOPE, "new", ["y"], T0 + 25 * HOUR)
         self.assertEqual([e["session"] for e in self.raw().values()], ["new"])
+
+    def test_expire_closes_one_session_and_writes_only_when_needed(self):
+        self.assertFalse(_review.expire_offer(self.path, SCOPE, "A", T0))
+        self.assertFalse(self.path.exists())  # nothing to close: no file is created
+        _review.save_offer(self.path, SCOPE, "A", ["x"], T0)
+        _review.save_offer(self.path, SCOPE, "B", ["y"], T0 + 1)
+        before = self.path.stat().st_ino
+        self.assertFalse(_review.expire_offer(self.path, SCOPE, "C", T0 + 2))
+        self.assertEqual(self.path.stat().st_ino, before)  # no rewrite
+        self.assertTrue(_review.expire_offer(self.path, SCOPE, "A", T0 + 2))
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "A", T0 + 2), [])
+        self.assertEqual(_review.load_offer(self.path, SCOPE, "B", T0 + 2), ["y"])
+        # An offer shown after the one that was read is not removed by the locked write.
+        offers = _review.put_offer({}, SCOPE, "A", ["new"], T0 + 5)
+        self.assertEqual(_review.get_offer(_review.close_offer(offers, SCOPE, "A", T0 + 5, T0 + 4),
+                                           SCOPE, "A", T0 + 5), ["new"])
+        self.assertEqual(_review.close_offer(offers, SCOPE, "A", T0 + 5), {})
 
     def test_count_is_capped_newest_kept(self):
         cap = _review.OFFER_MAX_COUNT
@@ -340,7 +358,7 @@ class OfferSessionTests(ProviderMixin, unittest.TestCase):
         a, b = self.chat("chat-A"), self.chat("chat-B")
         x = self._direct_candidate(a, "The database port is 5432.")
         self.assertEqual(self.review_ids(a), [x])
-        self.now[0] += 2 * DAY
+        self.now[0] += 2 * HOUR
         y = self._direct_candidate(b, "Deployments go to the eu-west region.")
         self.assertEqual(self.review_ids(b), [y, x])  # newer first: chat B's item 1 is Y
         a.on_turn_start(2, "keep 1")
@@ -354,7 +372,7 @@ class OfferSessionTests(ProviderMixin, unittest.TestCase):
         a, b = self.chat("chat-A"), self.chat("chat-B")
         x = self._direct_candidate(a, "The database port is 5432.")
         self.assertEqual(self.review_ids(a), [x])
-        self.now[0] += 2 * DAY
+        self.now[0] += 2 * HOUR
         y = self._direct_candidate(b, "Deployments go to the eu-west region.")
         self.assertEqual(self.review_ids(b), [y, x])
         a.on_turn_start(2, "drop 1")
@@ -405,9 +423,104 @@ class OfferSessionTests(ProviderMixin, unittest.TestCase):
         p.on_session_switch("s1")
         p.on_turn_start(3, "keep 1")
         self.assertNotEqual(p._store.get(x).kind, "candidate")
-        self.now[0] += 15 * DAY
+        self.now[0] += 25 * HOUR
         p.on_turn_start(4, "keep 1")  # expired by age
         self.assertIn("no review list is pending", p._review_note)
+
+
+class OfferLifetimeTests(ProviderMixin, unittest.TestCase):
+    """A list can be answered only in the replies right after it is shown, and within 24 hours."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.file_db = str(Path(self.tmp.name) / "t.db")
+        self.now = [T0]
+
+    def chat(self, db, session="s1"):
+        p = self.provider(db=db, session=session)
+        p._store.clock = lambda: self.now[0]
+        return p
+
+    def shown(self, db):
+        """A provider whose conversation was just shown two candidates; returns (p, id1, id2)."""
+        p = self.chat(db)
+        self._direct_candidate(p, "The database port is 5432.")
+        self.now[0] += 1
+        self._direct_candidate(p, "Deployments go to the eu-west region.")
+        items = json.loads(p.handle_tool_call("memory_review", {}))["items"]
+        self.assertEqual(len(items), 2)
+        return p, items[0]["id"], items[1]["id"]
+
+    def test_unrelated_message_closes_the_list(self):
+        for db in (self.file_db, ":memory:"):
+            with self.subTest(db=db):
+                self.check_unrelated_message_closes_the_list(db)
+
+    def check_unrelated_message_closes_the_list(self, db):
+        p, first, second = self.shown(db)
+        p.on_turn_start(2, "Give me three options for the release name.")
+        self.assertEqual(p._review_note, "")  # closing is silent
+        # The model answered with its own numbered list; the user replies to that one.
+        p.on_turn_start(3, "drop 2")
+        self.assertIsNone(p._store.get(second).deleted_at)
+        self.assertEqual(p._store.get(first).kind, "candidate")
+        self.assertIn("nothing was changed", p._review_note)
+        self.assertIn("show the list again with memory_review", p._review_note)
+        self.assertIn("nothing was changed", p.prefetch("drop 2"))
+        # A new memory_review opens a new list, which the next reply answers.
+        ids = [i["id"] for i in json.loads(p.handle_tool_call("memory_review", {}))["items"]]
+        p.on_turn_start(4, "drop 2")
+        self.assertIsNotNone(p._store.get(ids[1]).deleted_at)
+
+    def test_consecutive_replies_all_apply(self):
+        for db in (self.file_db, ":memory:"):
+            with self.subTest(db=db):
+                self.check_consecutive_replies_all_apply(db)
+
+    def check_consecutive_replies_all_apply(self, db):
+        p, first, second = self.shown(db)
+        p.on_turn_start(2, "keep 1")
+        self.assertIn("kept 1", p._review_note)
+        p.on_turn_start(3, "drop 2")
+        self.assertIn("dropped 1", p._review_note)
+        self.assertNotEqual(p._store.get(first).kind, "candidate")
+        self.assertIsNotNone(p._store.get(second).deleted_at)
+
+    def test_bot_turn_closes_the_list(self):
+        p, first, _ = self.shown(self.file_db)
+        p.on_turn_start(2, "keep 1", author_is_bot=True)
+        p.on_turn_start(3, "keep 1")
+        self.assertEqual(p._store.get(first).kind, "candidate")
+        self.assertIn("nothing was changed", p._review_note)
+
+    def test_lists_expire_after_24_hours(self):
+        for db in (self.file_db, ":memory:"):
+            with self.subTest(db=db):
+                self.check_lists_expire_after_24_hours(db)
+
+    def check_lists_expire_after_24_hours(self, db):
+        p, first, second = self.shown(db)
+        self.now[0] += 23 * HOUR
+        p.on_turn_start(2, "keep 1")
+        self.assertNotEqual(p._store.get(first).kind, "candidate")
+        self.now[0] += 2 * HOUR
+        p.on_turn_start(3, "drop 2")
+        self.assertIsNone(p._store.get(second).deleted_at)
+        self.assertIn("nothing was changed", p._review_note)
+
+    def test_closing_is_per_conversation_and_skips_writes_without_a_list(self):
+        a, first, _ = self.shown(self.file_db)
+        b = self.chat(self.file_db, session="s2")
+        path = Path(self.file_db + ".review.json")
+        before = path.stat().st_ino
+        b.on_turn_start(1, "What is on the calendar today?")
+        self.assertEqual(path.stat().st_ino, before)  # B had no list: the file is not rewritten
+        a.on_turn_start(2, "keep 1")  # A's list is still open
+        self.assertNotEqual(a._store.get(first).kind, "candidate")
+        a.on_turn_start(3, "thanks")
+        self.assertNotEqual(path.stat().st_ino, before)  # A's list closed: one locked, atomic write
+        self.assertEqual(_review.load_offer(path, SCOPE, "s1", self.now[0]), [])
 
 
 class WhyBoundsTests(ProviderMixin, unittest.TestCase):

@@ -594,9 +594,13 @@ reply typed by the user — `keep 1 3`, `drop 2`, `keep all` — approves or rej
 cannot promote a candidate itself. A reply applies only to the list shown in the same conversation
 (Hermes session): two chats on one database and scope each keep their own numbering, and a reply in a
 chat with no list changes nothing. A conversation that Hermes compresses or branches under a new
-session id keeps its list; `/new` does not. Pending lists are stored next to the database in
-`<db>.review.json` (written under `<db>.review.json.lock` and replaced atomically, so several Hermes
-processes can share it). Each expires after 14 days, and only the newest 200 are kept.
+session id keeps its list; `/new` does not. A list can be answered only right after it is shown:
+consecutive replies (`keep 1`, then `drop 2`) all apply, but the first message that is not a reply
+closes the list, so a later `drop 2` about some other numbered list changes nothing. A list also
+expires 24 hours after it is shown, and a new `memory_review` replaces it. A reply to a closed list
+changes nothing, and the injected note tells the model to show the list again. Pending lists are
+stored next to the database in `<db>.review.json` (written under `<db>.review.json.lock` and replaced
+atomically, so several Hermes processes can share it), and only the newest 200 are kept.
 
 ### Cleanup
 

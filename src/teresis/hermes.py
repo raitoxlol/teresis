@@ -442,18 +442,24 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             authored = _extract.user_authored_text(message if isinstance(message, str) else str(message or ""))
             self._turn_human = self._turn_is_human(turn_author, authored)[0]
             self._turn_author = str(author_name or "")
-            if not (self._store and self._write_enabled and self._turn_human):
+            if not (self._store and self._write_enabled):
                 return
-            actions = _review.parse_reply(authored)
+            actions = _review.parse_reply(authored) if self._turn_human else None
             if not actions:
+                # Hermes calls this before the model runs, so a list shown in this turn is saved
+                # after this point. A list is answered right after it is shown: any other turn
+                # closes it, so a later "drop 2" about some other numbered list cannot reach it.
+                self._expire_offer()
                 return
             offer = self._load_offer()
             if not offer:
                 self._set_review_note([
                     "## Memory review (teresis)",
                     "The user's message reads as a memory review reply, but no review list is pending "
-                    "in this conversation, so nothing was changed.",
-                    "If they meant memories, call memory_review to show the list; otherwise ignore this note.",
+                    "in this conversation, so nothing was changed. A list can only be answered in the "
+                    "messages right after it is shown, and for at most 24 hours.",
+                    "If they meant memories, tell them nothing was changed and show the list again with "
+                    "memory_review so they can answer its new numbers; otherwise ignore this note.",
                 ])
                 return
             res = _review.apply_reply(
@@ -840,6 +846,14 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             return _review.load_offer(self._offer_path, self._scope, self._session_id, now)
         return _review.get_offer(self._offers, self._scope, self._session_id, now)
 
+    def _expire_offer(self) -> None:
+        """Close this session's offer. No file write when there is none."""
+        now = self._store.clock()
+        if self._offer_path is not None:
+            _review.expire_offer(self._offer_path, self._scope, self._session_id, now)
+        elif _review.offer_shown_at(self._offers, self._scope, self._session_id, now) is not None:
+            self._offers = _review.close_offer(self._offers, self._scope, self._session_id, now)
+
     def _carry_offer(self, parent: str, child: str) -> None:
         now = self._store.clock()
         if self._offer_path is None:
@@ -866,9 +880,9 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             text += "\n".join(
                 f"{it['n']}. [{it['kind']}] {it['content']} (seen in {it['sessions']} session(s), "
                 f"{it['age_days']} days old)" for it in items)
-            text += ('\nShow this list to the user as written. They answer in their own message: '
+            text += ('\nShow this list to the user as written. They answer in their next message: '
                      '"keep 1 3", "drop 2" or "keep all". Teresis reads that message itself; '
-                     "you cannot approve on their behalf.")
+                     "you cannot approve on their behalf. Any other message closes the list.")
         else:
             text = "Nothing is waiting for approval."
         if self._review_note:
