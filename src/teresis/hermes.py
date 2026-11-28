@@ -33,6 +33,7 @@ from . import extract as _extract
 from . import provenance as _prov
 from . import review as _review
 from . import secrets as _secrets
+from .evidence import EvidencePacket
 from .mcp import TOOLS, Server
 from .store import MemoryStore, default_db_path
 from .text import containment, term_set, tokens
@@ -64,6 +65,7 @@ DEFAULTS: Dict[str, Any] = {
     "extra_scopes": "user",    # comma-separated scopes also searched on recall
     "prefetch_k": 6,
     "prefetch_budget_tokens": 700,
+    "prefetch_linked": False,
     # Lexical ranking normalizes the best hit to ~1.0, so a shared weak word
     # ("want", "like") looks relevant. Prefetch also requires a distinctive
     # term overlap; this floor drops the leftovers. Tool recall stays open.
@@ -281,6 +283,14 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._session_id = ""
         self._platform = ""
         self._last_count: Optional[int] = None
+        self._identity = ""
+        self._last_ids: List[str] = []
+        self._prev_ids: List[str] = []
+        self._turn_human = False
+        self._turn_author = ""
+        self._review_note = ""
+        self._offer_path = None
+        self._offers: Dict[str, List[str]] = {}
 
     # -- identity ----------------------------------------------------------
     @property
@@ -315,6 +325,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._write_enabled = kwargs.get("agent_context", "primary") not in _NO_WRITE_CONTEXTS
         self._session_id = session_id
         self._platform = kwargs.get("platform", "")
+        self._identity = identity
+        self._offer_path = _review.offer_path(self._db_path(hermes_home))
         try:
             embedder = _profile_embedder(self._config, hermes_home)
         except (TypeError, ValueError):
@@ -359,44 +371,107 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             "Use scope `user` for facts about the user.\n"
             "- For facts that change, pass a stable `key` (e.g. `user.editor`): the new value replaces the old.\n"
             "- Search deeper with memory_recall; rate memories you used with memory_feedback.\n"
+            "- If the user asks why you know or said something, call memory_why (no arguments explains "
+            "what was injected this turn and last turn) and cite the source.\n"
+            "- memory_review lists memories awaiting the user's approval. Only the user's own reply "
+            "(\"keep 1 3\", \"drop 2\") changes them; after such a reply, confirm what the injected "
+            "\"Memory review\" note says.\n"
             "- Never store secrets, credentials or tokens."
         )
 
-    def _format(self, mems, title: str) -> str:
-        lines = [f"## {title}"]
-        for m in mems:
-            label = m.kind + (f" {m.key}" if m.key else "")
-            lines.append(f"- [{label}] {m.content} (id {m.id})")
-        return "\n".join(lines)
+    def on_turn_start(self, turn_number: int, message: str, **kwargs) -> None:
+        try:
+            self._prev_ids, self._last_ids = self._last_ids, []
+            self._review_note = ""
+            author_id = kwargs.get("author_id")
+            author_name = kwargs.get("author_name")
+            author_is_bot = kwargs.get("author_is_bot")
+            turn_author = ({"id": author_id, "name": author_name, "is_bot": bool(author_is_bot)}
+                           if (author_id or author_name or author_is_bot) else None)
+            authored = _extract.user_authored_text(message if isinstance(message, str) else str(message or ""))
+            self._turn_human = self._turn_is_human(turn_author, authored)[0]
+            self._turn_author = str(author_name or "")
+            if not (self._store and self._write_enabled and self._turn_human):
+                return
+            actions = _review.parse_reply(authored)
+            if not actions:
+                return
+            offer = (_review.load_offer(self._offer_path, self._scope, self._store.clock())
+                     if self._offer_path is not None else self._offers.get(self._scope) or [])
+            if not offer:
+                return
+            res = _review.apply_reply(
+                self._store, offer, actions, by="chat-review",
+                meta={"approved_by": self._turn_author or "user",
+                      "approved_on": self._platform or "unknown"})
+            kept, dropped, skipped = res["kept"], res["dropped"], res["skipped"]
+            if not (kept or dropped or skipped):
+                return
+            head = (f"Applied from the user's own message: kept {len(kept)}, dropped {len(dropped)}"
+                    + (f", skipped {len(skipped)} (no longer waiting)" if skipped else "") + ".")
+            lines = ["## Memory review (teresis)", head]
+            lines += [f"- kept [{r['id']}] {r['content']}" for r in kept]
+            lines += [f"- dropped [{r['id']}] {r['content']}" for r in dropped]
+            lines.append("Confirm this to the user in one line.")
+            self._review_note = "\n".join(lines)
+        except Exception as exc:
+            log.debug("teresis on_turn_start failed: %s", exc)
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         self._last_count = 0
+        self._last_ids = []
+        note = self._review_note
         if not self._store or _is_trivial(query):
-            return ""
+            return note
         try:
-            k = int(self._config.get("prefetch_k", 6))
-            budget = int(self._config.get("prefetch_budget_tokens", 700))
-            query = _secrets.redact_secrets(query)[0]  # keep raw secrets out of remote embedder calls
-            facts = self._store.recall(query, scope=self._read_scopes, k=k, budget_tokens=budget,
-                                       exclude_kinds=["episode", _prov.CANDIDATE_KIND])
+            k = min(30, int(self._config['prefetch_k']))
+            packet = EvidencePacket(k, int(self._config['prefetch_budget_tokens']))
+            if packet.full:
+                return note
+            query = _secrets.redact_secrets(query)[0]
             floor = _min_score(self._config)
-            facts = [m for m in facts if _prefetch_relevant(query, m.content, floor=floor, score=m.score)
-                     and _prov.injectable(m.kind, m.content, m.meta, m.source)[0]]
-            blocks = [self._format(facts, "Long-term memory (teresis)")] if facts else []
-            if _truthy(self._config.get("capture_turns", True)):
-                eps = self._store.recall(query, scope=[self._scope], inherit=False, kinds=["episode"], k=2)
-                known = [" ".join(m.content.casefold().split()) for m in facts]
-                eps = [m for m in eps if _prov.injectable(m.kind, m.content, m.meta, m.source)[0]
-                       and _prefetch_relevant(query, m.content, floor=max(0.3, floor), score=m.score)
-                       and not any(k and k.removeprefix("user: ") in " ".join(m.content.casefold().split()) for k in known)]
-                if eps:
-                    blocks.append(self._format(eps, "Related past conversation"))
-                facts += eps
-            self._last_count = len(facts)
-            return "\n\n".join(blocks)
+            direct = self._store.recall(query, scope=self._read_scopes, k=min(60, max(12, 3*k)),
+                                        exclude_kinds=['episode', _prov.CANDIDATE_KIND], touch=False, expand_entities=False)
+            anchors = []
+            for m in direct:
+                if packet.full:
+                    break
+                if (_prefetch_relevant(query, m.content, floor=floor, score=m.score)
+                        and _prov.injectable(m.kind, m.content, m.meta, m.source)[0]
+                        and packet.add(m, 'Long-term memory (teresis)')):
+                    anchors.append(m)
+            if not packet.full and self._store.w.entity_hop > 0 and _truthy(self._config['prefetch_linked']):
+                for anchor in anchors[:3]:
+                    linked = False
+                    for peer in self._store.unique_peers(anchor):
+                        if (_prov.injectable(peer.kind, peer.content, peer.meta, peer.source)[0]
+                                and packet.add(peer, 'Related facts (shared entity)', via=anchor.id)):
+                            anchors.append(peer)
+                            linked = True
+                            break
+                    if linked:
+                        break
+            if not packet.full and _truthy(self._config['capture_turns']):
+                episodes = self._store.recall(query, scope=[self._scope], inherit=False, kinds=['episode'],
+                                              k=8, touch=False, expand_entities=False)
+                # Deduplicate against all accepted facts, including a linked fact.
+                known = [' '.join(m.content.casefold().split()).removeprefix('user: ') for m in anchors]
+                accepted = 0
+                for m in episodes:
+                    if packet.full or accepted >= 2:
+                        break
+                    body = ' '.join(m.content.casefold().split())
+                    if (_prov.injectable(m.kind, m.content, m.meta, m.source)[0]
+                            and _prefetch_relevant(query, m.content, floor=max(0.3, floor), score=m.score)
+                            and not any(k and k in body for k in known)
+                            and packet.add(m, 'Related past conversation')):
+                        accepted += 1
+            self._last_count = len(packet.ids)
+            self._last_ids = sorted(packet.ids)
+            return note + ("\n\n" if note and packet.text else "") + packet.text
         except Exception as exc:
             log.debug("teresis prefetch failed: %s", exc)
-            return ""
+            return note
 
     def recall_status(self):
         if not self._last_count or _RecallStatus is None:
@@ -488,14 +563,20 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         if indexer:
             indexer.wake.set()
 
+    def _origin_meta(self) -> Dict[str, Any]:
+        """Platform/profile/author of the writer, stamped on every Hermes-originated row."""
+        return {k: v for k, v in {"platform": self._platform, "profile": self._identity,
+                                  "author": self._turn_author}.items() if v}
+
     def _store_explicit(self, c: "_extract.Candidate", scope: str, source: str) -> bool:
         """A person said it with a strong marker: store (or promote) it as a standing memory."""
         sid = self._session_id
-        meta = {"session_id": sid, "origin": _prov.USER_TYPED, "trust": "human",
+        meta = {**self._origin_meta(), "session_id": sid, "origin": _prov.USER_TYPED, "trust": "human",
                 "promoted_by": "explicit-marker"}
         cand = _review.find_candidate(self._store, c.content, scope)
         if cand is not None:
-            self._store.update(cand.id, meta={"origin": _prov.USER_TYPED, "trust": "human"})
+            self._store.update(cand.id, meta={**self._origin_meta(),
+                                              "origin": _prov.USER_TYPED, "trust": "human"})
             _review.promote(self._store, cand.id, by="explicit-marker")
             return True
         return self._write_or_skip(c.content, automatic=True, scope=scope, kind=c.kind,
@@ -518,6 +599,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
                 _review.promote(self._store, existing.id, by="corroboration")
             return True
         meta = {
+            **self._origin_meta(),
             "session_id": sid, "origin": _prov.AUTO_CANDIDATE, "trust": "untrusted",
             "candidate_kind": c.kind, "candidate_importance": c.importance,
             "seen": [{"s": sid or "unknown", "d": _review.day_of(now)}] if human else [],
@@ -561,6 +643,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         if not authored.strip():
             return
         human, reason = self._turn_is_human(turn_author, authored, turn_origin)
+        if (turn_author or {}).get("name"):
+            self._turn_author = str(turn_author["name"])
         try:
             if _truthy(self._config.get("capture_turns", True)) and not _is_trivial(authored):
                 who = (turn_author or {}).get("name") or "User"
@@ -569,7 +653,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
                     importance=0.2,
                     ttl_days=float(self._config.get("episode_ttl_days", 30)) or None,
                     source=f"hermes:{self._platform or 'turn'}",
-                    meta={"session_id": session_id or self._session_id,
+                    meta={**self._origin_meta(),
+                          "session_id": session_id or self._session_id,
                           "origin": _prov.USER_TYPED if human else _prov.SYSTEM_TURN,
                           "trust": "human" if human else "system", "trust_reason": reason},
                 )
@@ -595,14 +680,16 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         try:
             if action == "add" and content:
                 self._write_or_skip(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool",
-                                    meta={"origin": _prov.ASSISTANT_TOOL, "trust": "assistant"})
+                                    meta={**self._origin_meta(), "origin": _prov.ASSISTANT_TOOL,
+                                          "trust": "assistant"})
             elif action == "replace" and content:
                 old = self._store.find(prev, scope=scope) if prev else None
                 if old:
                     self._store.update(old.id, content)
                 else:
                     self._store.remember(content, scope=scope, kind=kind, importance=0.7, source="hermes:memory-tool",
-                                         meta={"origin": _prov.ASSISTANT_TOOL, "trust": "assistant"})
+                                         meta={**self._origin_meta(), "origin": _prov.ASSISTANT_TOOL,
+                                               "trust": "assistant"})
             elif action == "remove":
                 old = self._store.find(prev or content, scope=scope) if (prev or content) else None
                 if old:
@@ -658,12 +745,86 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
             log.debug("teresis on_delegation failed: %s", exc)
 
     # -- tools -------------------------------------------------------------
+    _MEMORY_REVIEW_SCHEMA = {
+        "name": "memory_review",
+        "description": "List memories Teresis picked up automatically and is holding for the user's "
+        "approval. Show the numbered list to the user. Only the user's own reply (for example "
+        "'keep 1 3', 'drop 2', 'keep all') approves or rejects them; you cannot.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 10},
+            },
+        },
+    }
+
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        return _openai_schemas()
+        return _openai_schemas() + [self._MEMORY_REVIEW_SCHEMA]
+
+    def _save_offer(self, ids: List[str]) -> None:
+        if self._offer_path is not None:
+            _review.save_offer(self._offer_path, self._scope, ids, self._store.clock())
+        else:
+            self._offers[self._scope] = list(ids)
+
+    def _memory_review(self, args: Dict[str, Any]) -> str:
+        if not self._store:
+            return json.dumps({"error": "teresis is not initialized"})
+        try:
+            limit = max(1, min(10, int(args.get("limit", 5) or 5)))
+        except (TypeError, ValueError):
+            limit = 5
+        rows = [r for r in _review.queue(self._store) if r.get("scope") in self._read_scopes]
+        rows.sort(key=lambda r: (-r["sessions"], r["age_days"], r["id"]))
+        shown = rows[:limit]
+        self._save_offer([r["id"] for r in shown])
+        items = [{"n": i + 1, "id": r["id"], "kind": r["intended_kind"], "content": r["content"],
+                  "sessions": r["sessions"], "age_days": r["age_days"]} for i, r in enumerate(shown)]
+        if shown:
+            text = f"{len(shown)} of {len(rows)} memories waiting for approval (not used until kept):\n"
+            text += "\n".join(
+                f"{it['n']}. [{it['kind']}] {it['content']} (seen in {it['sessions']} session(s), "
+                f"{it['age_days']} days old)" for it in items)
+            text += ('\nShow this list to the user as written. They answer in their own message: '
+                     '"keep 1 3", "drop 2" or "keep all". Teresis reads that message itself; '
+                     "you cannot approve on their behalf.")
+        else:
+            text = "Nothing is waiting for approval."
+        if self._review_note:
+            text = self._review_note + "\n\n" + text
+        return json.dumps({"result": text, "waiting": len(rows), "items": items,
+                           "applied": self._review_note or ""}, default=str)
+
+    def _why_packets(self) -> str:
+        from . import receipt as _receipt
+
+        this_ids = list(self._last_ids)
+        prev_ids = [i for i in self._prev_ids if i not in set(this_ids)]
+        if not this_ids and not prev_ids:
+            return json.dumps({"result": "Nothing was injected from memory in this or the previous "
+                                         "turn. Pass an id from memory_recall."})
+        sections, receipts, missing = [], [], []
+        for label, ids in (("This turn", this_ids), ("Previous turn", prev_ids)):
+            if not ids:
+                continue
+            text, data = _receipt.explain(self._store, ids)
+            sections.append(f"{label}:\n{text}")
+            receipts += data["receipts"]
+            missing += data["missing"]
+        return json.dumps({"result": "\n\n".join(sections), "receipts": receipts,
+                           "missing": missing}, default=str)
 
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         if not self._server:
             return json.dumps({"error": "teresis is not initialized"})
+        if tool_name == "memory_review":
+            try:
+                return self._memory_review(dict(args or {}))
+            except Exception as exc:
+                return json.dumps({"error": str(exc)})
+        if (tool_name == "memory_why" and isinstance(args, dict)
+                and not args.get("id") and not args.get("ids")):
+            return self._why_packets()
         if tool_name in _WRITE_TOOLS and not self._write_enabled:
             return json.dumps({"error": "memory writes are disabled in this agent context (subagent/cron/flush)"})
         try:
@@ -710,6 +871,10 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
              "default": 30, "minimum": 0},
             {"key": "prefetch_k", "description": "Max memories injected per turn.", "type": "integer", "default": 6,
              "minimum": 0, "maximum": 30},
+            {"key": "prefetch_budget_tokens", "description": "Estimated token cap on the full rendered memory block, including episodes and citations; 0 disables prefetch.",
+             "type": "integer", "default": 700, "minimum": 0},
+            {"key": "prefetch_linked", "description": "Include at most one fact linked to an admitted fact by an unambiguous same-scope entity.",
+             "type": "boolean", "default": False},
             {"key": "prefetch_min_score", "description": "Score floor for automatic prefetch. Tool recall is not filtered. "
              "Lexical search normalizes the best hit, so also require a distinctive shared term.",
              "type": "number", "default": 0.45, "minimum": 0, "maximum": 1},

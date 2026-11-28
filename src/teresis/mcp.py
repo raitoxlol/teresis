@@ -17,7 +17,8 @@ INSTRUCTIONS = """teresis is persistent long-term memory shared across sessions 
 - For facts that change over time, pass a stable `key` (e.g. "user.editor", "project.db"): the new value
   supersedes the old one and history is kept.
 - Scopes are paths: "global", "user", "project/<name>", "project/<name>/agent-x". Recall in a scope also
-  sees its parents. Never store secrets or credentials."""
+  sees its parents. Never store secrets or credentials.
+- When asked why you know or said something, call memory_why with the memory id and cite it."""
 
 _SCOPE = {"type": "string", "description": "Scope path, e.g. 'global', 'user', 'project/acme'. Default 'global'."}
 
@@ -105,6 +106,19 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "memory_why",
+        "description": "Explain where a memory came from: who said it, when, on which platform and "
+        "profile, what it replaced, and whether it is current. Use it when asked why you know or "
+        "said something.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "ids": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+    },
+    {
         "name": "memory_feedback",
         "description": "Rate a recalled memory after using it: helpful ones rank higher, unhelpful ones sink.",
         "inputSchema": {
@@ -129,7 +143,8 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
-_READONLY = {"memory_recall", "memory_context", "memory_history", "memory_stats", "memory_conflicts"}
+_READONLY = {"memory_recall", "memory_context", "memory_history", "memory_stats", "memory_conflicts",
+             "memory_why"}
 for _t in TOOLS:
     _t["annotations"] = {"readOnlyHint": _t["name"] in _READONLY, "destructiveHint": _t["name"] == "memory_forget"}
 
@@ -193,6 +208,13 @@ class Server:
         if name == "memory_history":
             mems = s.history(a.get("id"), scope=a.get("scope"), key=a.get("key"))
             return _fmt(mems), {"versions": [m.to_dict(compact=True) for m in mems]}
+        if name == "memory_why":
+            from . import receipt as _receipt
+
+            ids = [str(i) for i in (a.get("ids") or [])] + ([str(a["id"])] if a.get("id") else [])
+            if not ids:
+                raise ValueError("memory_why needs an id")
+            return _receipt.explain(s, ids)
         if name == "memory_feedback":
             r = s.feedback(a["id"], bool(a["helpful"]))
             return f"importance now {r['importance']}" + (" (flagged for review)" if r["flagged"] else ""), r

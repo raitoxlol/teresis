@@ -82,6 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("-s", "--scope")
     h.add_argument("--key")
 
+    w2 = sub.add_parser("why", help="explain where a memory came from", parents=[common])
+    w2.add_argument("ids", nargs="+")
+
     sub.add_parser("stats", help="store statistics", parents=[common])
     m = sub.add_parser("maintain", help="purge expired/deleted, optimize indexes", parents=[common])
     m.add_argument("--vacuum", action="store_true")
@@ -288,6 +291,13 @@ def main(argv: list[str] | None = None) -> int:
             print(store.forget(args.id, scope=args.scope, key=args.key, hard=args.hard))
         elif args.cmd == "history":
             _print_mems(store.history(args.id, scope=args.scope, key=args.key), args.json)
+        elif args.cmd == "why":
+            from . import receipt as _receipt
+
+            text, data = _receipt.explain(store, args.ids)
+            print(text if not args.json else json.dumps(data, indent=2))
+            if not data["receipts"]:
+                return 1
         elif args.cmd == "stats":
             print(json.dumps(store.stats(), indent=2))
         elif args.cmd == "maintain":

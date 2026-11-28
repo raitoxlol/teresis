@@ -12,7 +12,12 @@ Unpromoted candidates expire (default 14 days) because they carry an ``expires_a
 
 from __future__ import annotations
 
+import json
+import os
+import re
+import tempfile
 import time
+from pathlib import Path
 from typing import Any, Iterable
 
 from . import provenance as P
@@ -153,3 +158,143 @@ def report(store: MemoryStore) -> dict[str, Any]:
     return {"active": sum(by_kind.values()), "by_origin": by_origin, "by_kind": by_kind,
             "candidates": sum(1 for q in queued if not q["legacy"]), "queue": queued,
             "untrusted": untrusted}
+
+
+# ----------------------------------------------------------------- chat review
+_KEEP_VERBS = {"keep", "promote", "approve", "save"}
+_DROP_VERBS = {"drop", "reject", "discard", "forget"}
+
+
+def parse_reply(text: str) -> list[tuple[str, str | list[int]]] | None:
+    """Parse a whole-message review reply into ``(action, targets)`` clauses.
+
+    Returns None unless the entire message is review commands: ``keep 1 3``,
+    ``drop 2``, ``keep all``. Anything else (mixed prose, missing targets) is
+    not a review reply.
+    """
+    t = (text or "").strip()
+    if not t or len(t) > 120:
+        return None
+    t = t.casefold().rstrip(".!").strip()
+    t = re.sub(r"^please[ ,]+|[ ,]+please$", "", t).strip()
+    if not t:
+        return None
+    tokens = re.sub(r"[,;&]", " ", t).split()
+    clauses: list[tuple[str, list[Any]]] = []
+    action: str | None = None
+    targets: list[Any] = []
+
+    def flush() -> bool:
+        if action is None:
+            return True
+        if not targets:
+            return False
+        clauses.append((action, list(targets)))
+        return True
+
+    for tok in tokens:
+        tok = tok.lstrip("#")
+        if tok in _KEEP_VERBS or tok in _DROP_VERBS:
+            if not flush():
+                return None
+            action = "keep" if tok in _KEEP_VERBS else "drop"
+            targets = []
+        elif tok == "and":
+            continue
+        elif action is None:
+            return None
+        elif tok in ("all", "everything"):
+            targets.append("all")
+        elif tok.isdigit():
+            targets.append(int(tok))
+        else:
+            return None
+    if not flush() or not clauses:
+        return None
+    return [(a, "all" if "all" in ts else ts) for a, ts in clauses]
+
+
+def offer_path(db_path: Any) -> Path | None:
+    """Sidecar file holding the pending review offer, next to the db. None for memory dbs."""
+    if not db_path or str(db_path) == ":memory:":
+        return None
+    return Path(str(db_path) + ".review.json")
+
+
+def _read_offers(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_offer(path: Path, scope: str, ids: list[str], now: float) -> None:
+    """Merge ``ids`` into the pending-offer file for ``scope``, written atomically."""
+    data = _read_offers(path)
+    data[scope] = {"at": now, "ids": list(ids)}
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def load_offer(path: Path, scope: str, now: float, max_age_days: float = 14.0) -> list[str]:
+    """Pending offer ids for ``scope``; [] when absent, corrupt or stale."""
+    entry = _read_offers(path).get(scope)
+    if not isinstance(entry, dict):
+        return []
+    at = entry.get("at")
+    ids = entry.get("ids")
+    if not isinstance(at, (int, float)) or not isinstance(ids, list):
+        return []
+    if now - float(at) > max_age_days * DAY:
+        return []
+    return [str(i) for i in ids]
+
+
+def apply_reply(store: MemoryStore, offer_ids: list[str], actions: list[tuple[str, Any]],
+                *, by: str = "chat-review", meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Apply a parsed human reply to a pending offer. Returns kept/dropped/skipped rows.
+
+    Numbers are 1-based positions in ``offer_ids``; ``all`` covers positions no clause
+    names. A position named under both keep and drop, or a row no longer waiting, is
+    skipped.
+    """
+    now = store.clock()
+    named = {n for _, ts in actions if isinstance(ts, list) for n in ts}
+    plan: dict[int, set[str]] = {}
+    for action, ts in actions:
+        targets = [n for n in range(1, len(offer_ids) + 1) if n not in named] if ts == "all" else ts
+        for n in targets:
+            plan.setdefault(int(n), set()).add(action)
+    out: dict[str, Any] = {"kept": [], "dropped": [], "skipped": []}
+    for n in sorted(plan):
+        acts = plan[n]
+        mem = store.get(offer_ids[n - 1]) if 1 <= n <= len(offer_ids) else None
+        active = (mem is not None and not mem.deleted_at and not mem.superseded_by
+                  and (mem.expires_at is None or mem.expires_at > now)
+                  and P.needs_review(mem.kind, mem.meta, mem.source))
+        row = {"n": n, "id": mem.id if mem else "", "content": mem.content if mem else ""}
+        if len(acts) != 1 or not active:
+            out["skipped"].append(row)
+            continue
+        try:
+            if acts == {"keep"}:
+                if meta:
+                    store.update(mem.id, meta=meta)
+                promote(store, mem.id, by=by)
+                out["kept"].append(row)
+            else:
+                reject(store, mem.id)
+                out["dropped"].append(row)
+        except (KeyError, ValueError):
+            out["skipped"].append(row)
+    return out
