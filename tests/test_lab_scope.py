@@ -33,10 +33,13 @@ class ScopeGuardTests(unittest.TestCase):
                            ("memory_context", {"scope": "hermes/alice", "query": "rooftop"}),
                            ("memory_conflicts", {"scope": "hermes/alice"}),
                            ("memory_history", {"scope": "hermes/alice", "key": "x"}),
-                           ("memory_history", {"id": self.alice_id})):
+                           ("memory_history", {"id": self.alice_id}),
+                           ("memory_why", {"id": self.alice_id}),
+                           ("memory_why", {"ids": ["0000000000000000", self.alice_id]})):
             out = self.call(self.bob, tool, **args)
             self.assertIn("another Hermes profile", out.get("error", ""), (tool, out))
             self.assertNotIn("cobalt-fern", json.dumps(out))
+        self.assertIn("cobalt-fern", self.call(self.alice, "memory_why", id=self.alice_id)["result"])
 
     def test_cannot_delete_update_or_rate_another_profiles_memory(self):
         for tool, args in (("memory_forget", {"id": self.alice_id}),

@@ -189,6 +189,8 @@ How to read it:
 Reproduce: download `locomo10.json` from the LoCoMo repo to `.data/`, then
 `python bench/locomo.py --data .data/locomo10.json --system <naive|teresis|teresis-emb|holographic|mem0>`.
 
+For the separate, opt-in experiment on speaker and neighboring-turn context, see [the paired dialogue retrieval replay](bench/dialogue_context.md).
+
 ## Head-to-head: 200-fact E2E (including LLM-backed mem0 `infer=True`)
 
 `bench/e2e_compare.py` feeds the same 200 facts + 20 updates (220 turns) into each memory system,
@@ -245,8 +247,9 @@ Caveats:
 - Both arms ran the same questions with seed 42. One run per arm, so there is no variance estimate.
 - The embedding variant did not run: Hermes does not forward `TERESIS_EMBED*` env vars to
   providers, so that arm stored no vectors. Set `embed` and `embed_model` under `plugins.teresis`
-  instead. Even without embeddings Teresis scored 100%, because every question here contains the
-  project name, so this run cannot show what embeddings add.
+  instead. Even without embeddings Teresis scored 100%, because every answerable question shares a
+  project name with its fact (only the 10 never-told questions have no such cue), so this run cannot show
+  what embeddings add.
 - Answers were re-graded once after fixing the grader: "4,249" now matches `4249`, and "I don't
   remember" counts as a refusal. It applied to every arm, and the results files say so.
 
@@ -423,8 +426,31 @@ Config goes under `plugins.teresis` in `config.yaml`:
 | `extract_on_pre_compress` | `false` | Compaction summaries are model-written, so extraction there is off. If you turn it on, rows land in the candidate quarantine only. |
 | `candidate_ttl_days` | `14` | Unpromoted candidates expire after this many days |
 | `system_authors` / `untrusted_platforms` / `interactive_platforms` | `""` | Comma-separated additions to the built-in trust lists |
-| `prefetch_k` / `prefetch_budget_tokens` | `6` / `700` | Injection size |
+| `prefetch_k` / `prefetch_budget_tokens` | `6` / `700` | Hard caps on the injected block: at most `prefetch_k` memories and `prefetch_budget_tokens` estimated tokens (`ceil(chars/4)`) for the whole rendered text, headers, citations, past conversation and the "Memory review" note included. `0` for either disables prefetch. See [Prefetch](#prefetch-what-gets-injected). |
+| `prefetch_linked` | `false` | Also admit at most one fact tied to an admitted fact by a single unambiguous entity in the same scope. See [Prefetch](#prefetch-what-gets-injected). |
 | `prefetch_min_score` | `0.45` | Score floor for automatic prefetch only. Tool `memory_recall` is not filtered. |
+
+### Prefetch: what gets injected
+
+Prefetch builds one small evidence packet per turn, or nothing. It is lexical by default, with no
+network and no model call. Rows must pass the trust gate and be in a readable scope. The order is:
+direct facts first, then (only if `prefetch_linked` is on) one linked fact, then at most two related past
+conversations. Automatic prefetch does not reinforce memories; explicit recall is unchanged. The packet stops at `prefetch_k` rows or
+`prefetch_budget_tokens`, whichever comes first, and an empty packet is a normal result when no row shares a
+distinctive term with the question.
+
+`prefetch_linked` is off because a shared name cannot tell which fact matters. If you store "Priya owns the
+billing service" and "Priya is on leave through October", the link answers "is the billing owner available?".
+If the second fact is "Priya collects vintage fountain pens", the same link adds noise. Stored conversation
+can also contradict a corrected value: after `kestrel.port` changes from 4400 to 6600, an old turn saying 4400
+may still be injected as past conversation. That gap is open; see the plan below.
+
+The design, release protocol and open work are in [`docs/hermes-ga-plan.md`](docs/hermes-ga-plan.md).
+To see what prefetch returns on a small synthetic replay (a diagnostic, not a benchmark or accuracy result):
+
+```bash
+PYTHONPATH=src python bench/hermes_packet.py
+```
 
 Credential-shaped values (including published AWS access-key examples) are redacted before
 the fact is stored. Ordinary placeholders like `API_KEY=your-api-key-here` still pass through.
@@ -483,8 +509,8 @@ claude mcp add teresis -- env PYTHONPATH=/path/to/teresis/src python3 -m teresis
 Repeat `--scope` as needed: writes go to the first scope, and recall searches all of them plus their parents.
 
 Tools: `memory_remember`, `memory_recall`, `memory_context`, `memory_update`, `memory_forget`,
-`memory_history`, `memory_feedback`, `memory_conflicts`, `memory_stats`. The server sends usage
-instructions in `initialize`.
+`memory_history`, `memory_why`, `memory_feedback`, `memory_conflicts`, `memory_stats`. The server
+sends usage instructions in `initialize`.
 
 ### HTTP (anything else)
 
@@ -509,6 +535,8 @@ print(m.context(["project/atlas", "user"], query="writing a reply"))
 
 Scope inheritance follows the path: `project/atlas/agent-x` → `project/atlas` → `project` → `global`.
 `user` is a sibling scope. To search it together with a project, pass `scope=["project/atlas", "user"]`.
+Scopes are namespaces, not access control: anyone who can open the database file or reach the MCP or
+HTTP server can read every scope, so use separate `db_path` files when you need isolation.
 
 ### Embeddings (optional)
 
@@ -552,6 +580,27 @@ teresis doctor                      # counts by origin/kind, candidate queue, un
 ```
 
 Hermes passes `turn_author` and `platform`, not an explicit origin for the turn. A proposal for a `turn_origin` argument is in [`docs/upstream-issue-turn-origin.md`](docs/upstream-issue-turn-origin.md). It is a draft and has not been filed.
+
+#### Receipts and review in chat
+
+`memory_why` returns a receipt for a memory: who said it, when, on which platform and profile, what
+it replaced, and whether it is current, superseded, forgotten or still a candidate. Called with no
+arguments inside Hermes it explains what was injected this turn and last turn; the same text is
+available on the command line as `teresis why <id>`. As a tool reply it is clipped like recall: 1200
+characters per memory text and 20000 for the reply.
+
+`memory_review` lists the candidates Teresis is holding for approval, numbered for the user. Only a
+reply typed by the user — `keep 1 3`, `drop 2`, `keep all` — approves or rejects them; the model
+cannot promote a candidate itself. A reply applies only to the list shown in the same conversation
+(Hermes session): two chats on one database and scope each keep their own numbering, and a reply in a
+chat with no list changes nothing. A conversation that Hermes compresses or branches under a new
+session id keeps its list; `/new` does not. A list can be answered only right after it is shown:
+consecutive replies (`keep 1`, then `drop 2`) all apply, but the first message that is not a reply
+closes the list, so a later `drop 2` about some other numbered list changes nothing. A list also
+expires 24 hours after it is shown, and a new `memory_review` replaces it. A reply to a closed list
+changes nothing, and the injected note tells the model to show the list again. Pending lists are
+stored next to the database in `<db>.review.json` (written under `<db>.review.json.lock` and replaced
+atomically, so several Hermes processes can share it), and only the newest 200 are kept.
 
 ### Cleanup
 

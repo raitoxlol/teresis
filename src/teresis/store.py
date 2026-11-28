@@ -108,6 +108,40 @@ CREATE INDEX IF NOT EXISTS ix_me_entity ON memory_entities(entity_key);
 """
 
 
+def _read_user_version(conn: sqlite3.Connection) -> int:
+    return int(conn.execute("PRAGMA user_version").fetchone()[0])
+
+
+def _newer_schema_error(found: int) -> sqlite3.DatabaseError:
+    return sqlite3.DatabaseError(
+        f"teresis database schema version {found} is newer than this build supports "
+        f"(supported up to {SCHEMA_VERSION}); refusing to open to avoid downgrading it"
+    )
+
+
+def _ensure_openable(conn: sqlite3.Connection) -> int:
+    """Refuse to open a store written by a newer teresis: proceeding would run
+    this build's schema/DDL against it and silently relabel a newer file.
+    Returns the stored schema version."""
+    found = _read_user_version(conn)
+    if found > SCHEMA_VERSION:
+        raise _newer_schema_error(found)
+    return found
+
+
+def _execute_schema(conn: sqlite3.Connection, schema: str) -> None:
+    """Run a multi-statement schema, splitting only on complete statements so
+    trigger bodies (which contain their own semicolons) stay intact."""
+    buf = ""
+    for line in schema.splitlines():
+        buf += line + "\n"
+        if sqlite3.complete_statement(buf):
+            conn.execute(buf)
+            buf = ""
+    if buf.strip():
+        conn.execute(buf)
+
+
 def default_db_path() -> Path:
     if env := os.environ.get("TERESIS_DB"):
         return Path(env).expanduser()
@@ -249,10 +283,13 @@ class MemoryStore:
 
     def _open(self) -> None:
         """Open the database. A current-schema file takes no write lock, so a busy writer cannot stall
-        startup, and a file or directory that cannot be written still serves recall (read-only)."""
+        startup, and a file or directory that cannot be written still serves recall (read-only).
+        A file stamped by a newer teresis is refused before any pragma, DDL or stamp touches it,
+        on every path (first open, read-only fallback, reopen after a replace)."""
         memory = str(self.path) == ":memory:"
         c = self._connect()
         try:
+            version = _ensure_openable(c)  # reject a newer schema before any write/WAL/DDL
             if not memory:
                 try:
                     c.execute("PRAGMA journal_mode=WAL")
@@ -262,10 +299,18 @@ class MemoryStore:
             c.execute("PRAGMA foreign_keys=ON")
             c.execute("PRAGMA secure_delete=ON")  # deleted pages are zeroed, not just unlinked
             c.execute(f"PRAGMA busy_timeout={int(self._busy * 1000)}")
-            version = c.execute("PRAGMA user_version").fetchone()[0]
             if version != SCHEMA_VERSION:
-                with self._lock:  # executescript manages its own transaction
-                    c.executescript(f"BEGIN IMMEDIATE;{SCHEMA}PRAGMA user_version={SCHEMA_VERSION};COMMIT;")
+                with self._lock:
+                    c.execute("BEGIN IMMEDIATE")
+                    try:
+                        _ensure_openable(c)  # re-check under the same lock/transaction as DDL and stamp
+                        _execute_schema(c, SCHEMA)
+                        c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                    except BaseException:
+                        if c.in_transaction:
+                            c.execute("ROLLBACK")
+                        raise
+                    c.execute("COMMIT")
             else:
                 try:
                     c.execute("SELECT 1 FROM memories LIMIT 1").fetchall()  # also proves the file is readable here
@@ -283,10 +328,15 @@ class MemoryStore:
             # The file exists but cannot be written (or its -shm cannot be created): serve reads only.
             ro = self._connect(immutable=True)
             try:
-                ro.execute("SELECT 1 FROM memories LIMIT 1").fetchall()
+                found = _read_user_version(ro)
+                if found <= SCHEMA_VERSION:
+                    ro.execute("SELECT 1 FROM memories LIMIT 1").fetchall()
             except sqlite3.Error:
                 ro.close()
                 raise exc
+            if found > SCHEMA_VERSION:  # read-only does not make a newer file safe to read
+                ro.close()
+                raise _newer_schema_error(found)
             log.warning("teresis database %s is not writable; recall works, writes are refused", self.path)
             self._conn = ro
             self.read_only = True
@@ -640,6 +690,7 @@ class MemoryStore:
         touch: bool = True,
         explain: bool = False,
         lexical_only: bool = False,
+        expand_entities: bool = True,
     ) -> list[Memory]:
         """Hybrid retrieval: BM25 (Porter) + trigram fuzzy + optional vectors, fused by per-channel normalized scores,
         then re-weighted by recency, importance, reinforcement and pinning.
@@ -647,6 +698,7 @@ class MemoryStore:
         ``scope='project/x'`` also searches parents ('project', 'global') unless ``inherit=False``.
         ``budget_tokens`` packs the best memories that fit, instead of a fixed ``k``.
         ``as_of`` (unix time) answers "what did I believe then?" including superseded versions.
+        ``expand_entities=False`` disables one-hop entity expansion.
         """
         w = self.w
         active, aparams = self._active_sql("m", as_of)
@@ -704,7 +756,7 @@ class MemoryStore:
         if not lexical_only and self.reranker and w.rerank > 0 and len(scored) > 1:
             scored = self._rerank(query, scored, explain)
 
-        if w.entity_hop > 0 and scored:
+        if expand_entities and w.entity_hop > 0 and scored:
             scored = self._expand_entities(scored, base_where, base_params, k, now, explain)
 
         if w.mmr > 0:
@@ -1067,6 +1119,24 @@ class MemoryStore:
             for r in rows:
                 self._link_entities(c, r["id"], r["content"], r["updated_at"] or now)
         return {"memories": len(rows), "entities": self._q("SELECT count(*) FROM entities")[0][0]}
+
+    def unique_peers(self, anchor: Memory) -> Iterator[Memory]:
+        """Other end of an unambiguous entity link among active durable rows in the same scope."""
+        active, params = self._active_sql('m')
+        keys = self._q('SELECT entity_key FROM memory_entities WHERE memory_id=? '
+                       'ORDER BY weight DESC, entity_key LIMIT 4', [anchor.id])
+        seen = set()
+        for key in keys:
+            # Only two endpoints qualify; stop looking as soon as a third exists.
+            rows = self._q(f'SELECT m.* FROM memory_entities me JOIN memories m ON m.id=me.memory_id '
+                           f'WHERE me.entity_key=? AND m.scope=? AND {active} '
+                           "AND m.kind NOT IN ('episode', 'candidate') LIMIT 3", [key[0], anchor.scope, *params])
+            if len(rows) != 2 or not any(r['id'] == anchor.id for r in rows):
+                continue
+            peer = next(r for r in rows if r['id'] != anchor.id)
+            if peer['id'] not in seen:
+                seen.add(peer['id'])
+                yield Memory.from_row(peer)
 
     def _expand_entities(self, scored: list[Memory], base_where: str, base_params: list[Any], k: int,
                          now: float, explain: bool) -> list[Memory]:

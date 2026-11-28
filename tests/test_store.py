@@ -333,7 +333,7 @@ class McpTests(unittest.TestCase):
             resps = [json.loads(line) for line in out.getvalue().splitlines()]
             by_id = {r["id"]: r for r in resps}
             self.assertEqual(by_id[1]["result"]["protocolVersion"], "2025-06-18")
-            self.assertEqual(len(by_id[2]["result"]["tools"]), 9)
+            self.assertEqual(len(by_id[2]["result"]["tools"]), 10)
             self.assertIn("created", by_id[3]["result"]["content"][0]["text"])
             self.assertIn("PostgreSQL", by_id[4]["result"]["content"][0]["text"])
             self.assertTrue(by_id[5]["result"]["isError"])

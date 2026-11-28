@@ -19,7 +19,8 @@ INSTRUCTIONS = """teresis is persistent long-term memory shared across sessions 
 - For facts that change over time, pass a stable `key` (e.g. "user.editor", "project.db"): the new value
   supersedes the old one and history is kept.
 - Scopes are paths: "global", "user", "project/<name>", "project/<name>/agent-x". Recall in a scope also
-  sees its parents. Never store secrets or credentials."""
+  sees its parents. Never store secrets or credentials.
+- When asked why you know or said something, call memory_why with the memory id and cite it."""
 
 _SCOPE = {"type": "string", "description": "Scope path, e.g. 'global', 'user', 'project/acme'. Default 'global'."}
 
@@ -109,6 +110,19 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "memory_why",
+        "description": "Explain where a memory came from: who said it, when, on which platform and "
+        "profile, what it replaced, and whether it is current. Use it when asked why you know or "
+        "said something.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "ids": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+    },
+    {
         "name": "memory_feedback",
         "description": "Rate a recalled memory after using it: helpful ones rank higher, unhelpful ones sink.",
         "inputSchema": {
@@ -133,7 +147,8 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
-_READONLY = {"memory_recall", "memory_context", "memory_history", "memory_stats", "memory_conflicts"}
+_READONLY = {"memory_recall", "memory_context", "memory_history", "memory_stats", "memory_conflicts",
+             "memory_why"}
 for _t in TOOLS:
     _t["annotations"] = {"readOnlyHint": _t["name"] in _READONLY, "destructiveHint": _t["name"] == "memory_forget"}
 
@@ -159,6 +174,57 @@ def _clip_dicts(mems) -> list[dict]:
             break
         out.append(d)
     return out
+
+
+def _clip_receipt(r: dict) -> dict:
+    """A receipt with every text field clipped like a recalled memory; the keys are unchanged."""
+    out = {k: _clip(v) if isinstance(v, str) else v for k, v in r.items()}
+    out["replaced"] = [{k: _clip(v) if isinstance(v, str) else v for k, v in rep.items()}
+                       for rep in r.get("replaced") or []]
+    return out
+
+
+def why_reply(store: MemoryStore, groups: list[tuple[str, list[str]]]) -> tuple[str, dict]:
+    """memory_why text and data for ``(label, ids)`` groups, bounded like other tool replies.
+
+    Each text field is clipped to MAX_TOOL_ITEM_CHARS. Receipts and missing ids stop at
+    MAX_TOOL_OUTPUT_CHARS of JSON (``omitted`` counts the rest), and the text is cut at
+    MAX_TOOL_OUTPUT_CHARS. A group with a label is rendered under ``<label>:``.
+    """
+    from . import receipt as _receipt
+
+    sections: list[str] = []
+    receipts: list[dict] = []
+    missing: list[str] = []
+    used = omitted = 0
+    for label, ids in groups:
+        if not ids:
+            continue
+        _, data = _receipt.explain(store, ids)
+        shown: list[dict] = []
+        gone: list[str] = []
+        for item in [_clip_receipt(r) for r in data["receipts"]] + [_clip(i) for i in data["missing"]]:
+            size = len(json.dumps(item, default=str)) + 2  # with its ", " in the list
+            if used + size > MAX_TOOL_OUTPUT_CHARS:
+                omitted += 1
+                continue
+            used += size
+            (shown if isinstance(item, dict) else gone).append(item)
+        if not shown and not gone:
+            continue
+        text = _receipt.render(shown, gone)
+        sections.append(f"{label}:\n{text}" if label else text)
+        receipts += shown
+        missing += gone
+    text = "\n\n".join(sections) or "No memories to explain."
+    if omitted:
+        text += f"\n\n... [{omitted} more not shown; ask for fewer ids]"
+    if len(text) > MAX_TOOL_OUTPUT_CHARS:
+        text = text[:MAX_TOOL_OUTPUT_CHARS] + "\n... [truncated; ask for fewer ids]"
+    data = {"receipts": receipts, "missing": missing}
+    if omitted:
+        data["omitted"] = omitted
+    return text, data
 
 
 def _fmt(mems) -> str:
@@ -231,6 +297,11 @@ class Server:
         if name == "memory_history":
             mems = s.history(a.get("id"), scope=a.get("scope"), key=a.get("key"))
             return _fmt(mems), {"versions": _clip_dicts(mems)}
+        if name == "memory_why":
+            ids = [str(i) for i in (a.get("ids") or [])] + ([str(a["id"])] if a.get("id") else [])
+            if not ids:
+                raise ValueError("memory_why needs an id")
+            return why_reply(s, [("", ids)])
         if name == "memory_feedback":
             r = s.feedback(a["id"], bool(a["helpful"]))
             return f"importance now {r['importance']}" + (" (flagged for review)" if r["flagged"] else ""), r

@@ -12,8 +12,26 @@ Unpromoted candidates expire (default 14 days) because they carry an ``expires_a
 
 from __future__ import annotations
 
+import json
+import math
+import os
+import re
+import tempfile
 import time
-from typing import Any, Iterable
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Callable, Iterable, Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None  # type: ignore[assignment]
+    try:
+        import msvcrt
+    except ImportError:
+        msvcrt = None  # type: ignore[assignment]
+else:
+    msvcrt = None  # type: ignore[assignment]
 
 from . import provenance as P
 from .store import DAY, Memory, MemoryStore
@@ -153,3 +171,244 @@ def report(store: MemoryStore) -> dict[str, Any]:
     return {"active": sum(by_kind.values()), "by_origin": by_origin, "by_kind": by_kind,
             "candidates": sum(1 for q in queued if not q["legacy"]), "queue": queued,
             "untrusted": untrusted}
+
+
+# ----------------------------------------------------------------- chat review
+_KEEP_VERBS = {"keep", "promote", "approve", "save"}
+_DROP_VERBS = {"drop", "reject", "discard", "forget"}
+
+
+def parse_reply(text: str) -> list[tuple[str, str | list[int]]] | None:
+    """Parse a whole-message review reply into ``(action, targets)`` clauses.
+
+    Returns None unless the entire message is review commands: ``keep 1 3``,
+    ``drop 2``, ``keep all``. Anything else (mixed prose, missing targets) is
+    not a review reply.
+    """
+    t = (text or "").strip()
+    if not t or len(t) > 120:
+        return None
+    t = t.casefold().rstrip(".!").strip()
+    t = re.sub(r"^please[ ,]+|[ ,]+please$", "", t).strip()
+    if not t:
+        return None
+    tokens = re.sub(r"[,;&]", " ", t).split()
+    clauses: list[tuple[str, list[Any]]] = []
+    action: str | None = None
+    targets: list[Any] = []
+
+    def flush() -> bool:
+        if action is None:
+            return True
+        if not targets:
+            return False
+        clauses.append((action, list(targets)))
+        return True
+
+    for tok in tokens:
+        tok = tok.lstrip("#")
+        if tok in _KEEP_VERBS or tok in _DROP_VERBS:
+            if not flush():
+                return None
+            action = "keep" if tok in _KEEP_VERBS else "drop"
+            targets = []
+        elif tok == "and":
+            continue
+        elif action is None:
+            return None
+        elif tok in ("all", "everything"):
+            targets.append("all")
+        elif tok.isdigit():
+            targets.append(int(tok))
+        else:
+            return None
+    if not flush() or not clauses:
+        return None
+    return [(a, "all" if "all" in ts else ts) for a, ts in clauses]
+
+
+def offer_path(db_path: Any) -> Path | None:
+    """Sidecar file holding pending review offers, next to the db. None for memory dbs."""
+    if not db_path or str(db_path) == ":memory:":
+        return None
+    return Path(str(db_path) + ".review.json")
+
+
+# A numbered offer belongs to the conversation that showed it. Several Hermes processes
+# (a gateway and a dashboard, say) share one db and one scope, so the key is (scope,
+# session). It can be answered only right after it is shown: the provider closes it on the
+# first turn that is not a keep/drop reply, so a later "drop 2" about some other numbered
+# list cannot reach it. Offers older than OFFER_MAX_AGE_HOURS are dropped and only the
+# newest OFFER_MAX_COUNT are kept, so the file stays small.
+OFFER_MAX_AGE_HOURS = 24.0
+OFFER_MAX_COUNT = 200
+
+
+def _offer_key(scope: str, session: str) -> str:
+    return json.dumps([scope, session])
+
+
+def prune_offers(offers: dict[str, Any], now: float) -> dict[str, Any]:
+    """Well-formed offers younger than OFFER_MAX_AGE_HOURS, newest OFFER_MAX_COUNT only."""
+    live = {}
+    for key, e in offers.items():
+        if (isinstance(e, dict) and isinstance(e.get("scope"), str) and isinstance(e.get("session"), str)
+                and isinstance(e.get("at"), (int, float)) and math.isfinite(e["at"])
+                and isinstance(e.get("ids"), list) and key == _offer_key(e["scope"], e["session"])
+                and now - float(e["at"]) <= OFFER_MAX_AGE_HOURS * 3600.0):
+            live[key] = e
+    newest = sorted(live.items(), key=lambda kv: float(kv[1]["at"]), reverse=True)
+    return dict(newest[:OFFER_MAX_COUNT])
+
+
+def put_offer(offers: dict[str, Any], scope: str, session: str, ids: list[str], now: float) -> dict[str, Any]:
+    """``offers`` with this session's offer replaced, then pruned."""
+    out = dict(offers)
+    out[_offer_key(scope, session)] = {"scope": scope, "session": session, "at": now,
+                                       "ids": [str(i) for i in ids]}
+    return prune_offers(out, now)
+
+
+def get_offer(offers: dict[str, Any], scope: str, session: str, now: float) -> list[str]:
+    """Offer ids shown in ``session`` for ``scope``; [] when absent, malformed or stale."""
+    entry = prune_offers(offers, now).get(_offer_key(scope, session))
+    return [str(i) for i in entry["ids"]] if entry else []
+
+
+def offer_shown_at(offers: dict[str, Any], scope: str, session: str, now: float) -> float | None:
+    """When ``session``'s live offer for ``scope`` was shown; None when there is none."""
+    entry = prune_offers(offers, now).get(_offer_key(scope, session))
+    return float(entry["at"]) if entry else None
+
+
+def close_offer(offers: dict[str, Any], scope: str, session: str, now: float,
+                shown_at: float | None = None) -> dict[str, Any]:
+    """``offers`` without ``session``'s offer for ``scope``, pruned. With ``shown_at``, only an
+    offer shown at or before that time is removed, so one written meanwhile is kept."""
+    live = prune_offers(offers, now)
+    key = _offer_key(scope, session)
+    if key in live and (shown_at is None or float(live[key]["at"]) <= shown_at):
+        del live[key]
+    return live
+
+
+def carry_offer(offers: dict[str, Any], scope: str, parent: str, child: str, now: float) -> dict[str, Any]:
+    """Copy the parent session's offer to ``child`` (a compressed or branched conversation).
+
+    The copy keeps the parent's timestamp, so it expires when the original would. A newer
+    offer already shown in ``child`` is kept.
+    """
+    live = prune_offers(offers, now)
+    src = live.get(_offer_key(scope, parent))
+    dst = live.get(_offer_key(scope, child))
+    if not src or parent == child or (dst and float(dst["at"]) >= float(src["at"])):
+        return live
+    live[_offer_key(scope, child)] = {**src, "session": child}
+    return prune_offers(live, now)
+
+
+def _read_offers(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    offers = data.get("offers") if isinstance(data, dict) else None
+    return offers if isinstance(offers, dict) else {}
+
+
+@contextmanager
+def _offer_lock(path: Path) -> Iterator[None]:
+    """Exclusive lock on ``<path>.lock`` across processes. The data file itself is
+    replaced atomically, so readers never need the lock."""
+    fd = os.open(str(path) + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        elif msvcrt is not None:  # pragma: no cover - Windows
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        yield
+    finally:
+        if fcntl is None and msvcrt is not None:  # pragma: no cover - Windows
+            try:
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
+        os.close(fd)  # closing also releases a flock
+
+
+def edit_offers(path: Path, change: Callable[[dict[str, Any]], dict[str, Any]], now: float) -> None:
+    """Locked read-modify-write of the offer file, then an atomic replace."""
+    with _offer_lock(path):
+        data = {"offers": prune_offers(change(_read_offers(path)), now)}
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+
+def save_offer(path: Path, scope: str, session: str, ids: list[str], now: float) -> None:
+    """Record the offer ``session`` just showed for ``scope``. Other sessions' offers are kept."""
+    edit_offers(path, lambda offers: put_offer(offers, scope, session, ids, now), now)
+
+
+def load_offer(path: Path, scope: str, session: str, now: float) -> list[str]:
+    """Offer ids shown in ``session`` for ``scope``; [] when absent, corrupt or stale."""
+    return get_offer(_read_offers(path), scope, session, now)
+
+
+def expire_offer(path: Path, scope: str, session: str, now: float) -> bool:
+    """Close ``session``'s offer for ``scope``. The file is read without the lock first and
+    written (locked, atomic) only when there is an offer to close. True when one was closed."""
+    shown_at = offer_shown_at(_read_offers(path), scope, session, now)
+    if shown_at is None:
+        return False
+    edit_offers(path, lambda offers: close_offer(offers, scope, session, now, shown_at), now)
+    return True
+
+
+def apply_reply(store: MemoryStore, offer_ids: list[str], actions: list[tuple[str, Any]],
+                *, by: str = "chat-review", meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Apply a parsed human reply to a pending offer. Returns kept/dropped/skipped rows.
+
+    Numbers are 1-based positions in ``offer_ids``; ``all`` covers positions no clause
+    names. A position named under both keep and drop, or a row no longer waiting, is
+    skipped.
+    """
+    now = store.clock()
+    named = {n for _, ts in actions if isinstance(ts, list) for n in ts}
+    plan: dict[int, set[str]] = {}
+    for action, ts in actions:
+        targets = [n for n in range(1, len(offer_ids) + 1) if n not in named] if ts == "all" else ts
+        for n in targets:
+            plan.setdefault(int(n), set()).add(action)
+    out: dict[str, Any] = {"kept": [], "dropped": [], "skipped": []}
+    for n in sorted(plan):
+        acts = plan[n]
+        mem = store.get(offer_ids[n - 1]) if 1 <= n <= len(offer_ids) else None
+        active = (mem is not None and not mem.deleted_at and not mem.superseded_by
+                  and (mem.expires_at is None or mem.expires_at > now)
+                  and P.needs_review(mem.kind, mem.meta, mem.source))
+        row = {"n": n, "id": mem.id if mem else "", "content": mem.content if mem else ""}
+        if len(acts) != 1 or not active:
+            out["skipped"].append(row)
+            continue
+        try:
+            if acts == {"keep"}:
+                if meta:
+                    store.update(mem.id, meta=meta)
+                promote(store, mem.id, by=by)
+                out["kept"].append(row)
+            else:
+                reject(store, mem.id)
+                out["dropped"].append(row)
+        except (KeyError, ValueError):
+            out["skipped"].append(row)
+    return out
