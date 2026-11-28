@@ -83,6 +83,7 @@ DEFAULTS: Dict[str, Any] = {
     "pre_compress_checkpoint": True,   # metadata-only episode, never a preference/decision/procedure row
     "candidate_ttl_days": 14,
     "embed_timeout": 120,
+    "busy_timeout": 5,         # seconds a write waits on another writer before it fails (CLI default: 30)
     "embed_auth": "profile",
     "rerank": "",            # "fastembed" enables the local ONNX cross-encoder; empty/none = off
     "rerank_model": "Xenova/ms-marco-MiniLM-L-6-v2",
@@ -294,6 +295,7 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         self._session_id = ""
         self._platform = ""
         self._last_count: Optional[int] = None
+        self._init_error = ""
 
     # -- identity ----------------------------------------------------------
     @property
@@ -337,7 +339,13 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
         except Exception as exc:
             log.warning("teresis reranker unavailable (%s); continuing without rerank", exc)
             reranker = None
-        self._store = MemoryStore(self._db_path(hermes_home), embedder=embedder, reranker=reranker)
+        try:
+            self._store = MemoryStore(self._db_path(hermes_home), embedder=embedder, reranker=reranker,
+                                      busy_timeout=float(self._config.get("busy_timeout", 5)))
+        except Exception as exc:
+            self._init_error = f"{type(exc).__name__}: {exc}"
+            raise
+        self._init_error = ""
         self._server = Server(self._store, default_scope=self._read_scopes)
         if embedder and self._write_enabled:
             self._capture_indexer = _CaptureIndexer(self._store, embedder, hermes_home)
@@ -701,7 +709,8 @@ class TeresisMemoryProvider(_Base):  # type: ignore[misc,valid-type]
 
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         if not self._server:
-            return json.dumps({"error": "teresis is not initialized"})
+            why = f": {self._init_error}" if self._init_error else ""
+            return json.dumps({"error": f"teresis is not initialized{why}"})
         if tool_name in _WRITE_TOOLS and not self._write_enabled:
             return json.dumps({"error": "memory writes are disabled in this agent context (subagent/cron/flush)"})
         try:
