@@ -258,8 +258,8 @@ time, and a mixed-topic episode with one stale span.
 | --- | --- | --- |
 | Hermes hooks (`prefetch`, `sync_turn`, `on_memory_write`, `on_pre_compress`) | code | Unchanged. |
 | `plugins.teresis.prefetch_k`, `prefetch_budget_tokens`, `prefetch_linked`, `prefetch_min_score` | code / WIP (`prefetch_linked`, full-block budget) | `README.md`, Hermes section. |
-| `evidence.build_packet(store, query, scopes, limit, budget, options) -> Packet` | proposal (M2) | Moves assembly out of `hermes.py` so MCP, HTTP, Hermes and benchmarks run one code path. Today the bench parses citations out of rendered text, so it does not test the builder directly. |
-| `teresis packet "<query>" --scope S --explain` | proposal (M2) | Dry-run packet with per-row reason codes. Read-only. |
+| `evidence.build_packet(store, query, scopes, limit, budget, options) -> Packet` | code (M2) | Hermes prefetch, `teresis packet` and `bench/hermes_packet.py` run this one code path; the bench reads the structured items and reason codes instead of parsing citations. The `memory_context` tool (MCP and HTTP) is a different contract and does not use it. |
+| `teresis packet "<query>" --scope S --explain` | code (M2) | Dry-run packet with per-row reason codes. Read-only. |
 | `plugins.teresis.prefetch_intent: auto\|current` | proposal (M3) | Escape hatch if intent rules misfire. |
 | `plugins.teresis.proposals: off\|local\|hosted`, `proposal_url` | proposal (M7) | Default `off`. |
 | `teresis review proposals / accept / reject / invalidate / purge --model X` | proposal (M7) | Extends `teresis review`. |

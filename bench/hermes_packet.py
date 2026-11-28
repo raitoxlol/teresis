@@ -5,13 +5,15 @@
 Both arms use the native provider and identical synthetic stores. The labels below
 are the exact rows useful for a question. A missing row AND an unnecessary row are
 both errors. Red rows are research targets, not a CI gate or a leaderboard.
+
+Each row reads the structured packet (evidence.build_packet with the explain pass), so it
+shows the reason code for every labelled row that was included (in=) or left out (out=).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
 from dataclasses import dataclass
 
 from teresis.hermes import TeresisMemoryProvider
@@ -85,15 +87,19 @@ def run(case: Case, linked: bool) -> dict:
                 raise ValueError(f"{case.name}: fixture rows unexpectedly reconciled")
             labels[mid] = row.label
         context = provider.prefetch(case.question)
-        returned = [labels[mid] for mid in re.findall(r" \(id ([0-9a-f]{16})(?:; linked from [0-9a-f]{16})?\)$",
-                                                      context, flags=re.M)]
-        if context and (not returned or len(returned) != provider._last_count):
-            raise ValueError(f"{case.name}: unrecognized provider citation format")
+        # The structured packet behind that text, with the explain pass for rows recall skipped.
+        packet = provider.build_packet(case.question, explain=True)
+        if packet.text != context or packet.render() != context or provider._last_ids != packet.ids:
+            raise ValueError(f"{case.name}: packet does not match what prefetch injected")
+        returned = [labels[it.id] for it in packet.memories]
+        included = {labels[it.id]: it.reason for it in packet.memories}
+        left_out = {labels[d.id]: d.reason for d in packet.dropped if d.id in labels and d.id not in packet.ids}
         missing = sorted(set(case.required) - set(returned))
         extra = sorted(set(returned) - set(case.required))
         cost = estimate_tokens(context) if context else 0
         within_limits = cost <= case.budget and len(returned) <= case.k
         return {"case": case.name, "arm": "linked" if linked else "direct", "returned": returned,
+                "included": included, "left_out": left_out, "empty_reason": packet.empty_reason,
                 "missing": missing, "extra": extra, "estimated_tokens": cost, "budget": case.budget,
                 "within_limits": within_limits, "pass": not missing and not extra and within_limits}
     finally:
@@ -112,8 +118,13 @@ def main() -> None:
         return
     for r in rows:
         state = "pass" if r["pass"] else "miss"
+        why = lambda d: "[" + ", ".join(f"{k}:{v}" for k, v in d.items()) + "]"
+        empty = f" empty={r['empty_reason']}" if r["empty_reason"] else ""
         print(f"{r['arm']:6} {state:4} {r['case']:<41} missing={r['missing']} extra={r['extra']} "
-              f"budget={r['estimated_tokens']}/{r['budget']}")
+              f"budget={r['estimated_tokens']}/{r['budget']} in={why(r['included'])} "
+              f"out={why(r['left_out'])}{empty}")
+    passed = {arm: sum(r["pass"] for r in rows if r["arm"] == arm) for arm in dict.fromkeys(r["arm"] for r in rows)}
+    print("passed: " + ", ".join(f"{arm} {n} of {len(CASES)}" for arm, n in passed.items()))
 
 
 if __name__ == "__main__":

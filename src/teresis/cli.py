@@ -27,6 +27,48 @@ def _print_mems(mems, as_json: bool) -> None:
             print(f"    why: {m.why}")
 
 
+def _packet(args) -> int:
+    """`teresis packet`: build the prefetch packet for a query without writing to the store."""
+    from pathlib import Path
+
+    from . import evidence as _evidence
+    from .hermes import DEFAULTS, _is_trivial
+    from .store import default_db_path
+
+    path = Path(args.db) if args.db else default_db_path()
+    if str(path) != ":memory:" and not path.exists():
+        print(f"teresis: no database at {path}", file=sys.stderr)
+        return 1
+    scopes = list(dict.fromkeys(s.strip("/ ") for s in (args.scope or ["hermes/default", "user"]) if s.strip("/ ")))
+    if not scopes:
+        print("teresis: packet needs a non-empty --scope", file=sys.stderr)
+        return 1
+    opts = _evidence.PacketOptions(
+        min_score=DEFAULTS["prefetch_min_score"] if args.min_score is None else args.min_score,
+        linked=args.linked, episodes=not args.no_episodes, explain=args.explain)
+    store = MemoryStore(path)
+    try:
+        packet = _evidence.build_packet(
+            store, args.query, scopes,
+            limit=DEFAULTS["prefetch_k"] if args.k is None else args.k,
+            budget=DEFAULTS["prefetch_budget_tokens"] if args.budget is None else args.budget,
+            options=opts, trivial=_is_trivial)
+    except (KeyError, ValueError, RuntimeError) as exc:
+        print(f"teresis: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        store.close()
+    if args.json:
+        print(json.dumps(packet.to_dict(), indent=2, default=str))
+    elif args.explain:
+        print(_evidence.explain_text(packet))
+    elif packet.text:
+        print(packet.text)
+    else:
+        print(f"(nothing would be injected: {packet.empty_reason})")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--db", default=argparse.SUPPRESS,
@@ -85,6 +127,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     w2 = sub.add_parser("why", help="explain where a memory came from", parents=[common])
     w2.add_argument("ids", nargs="+")
+
+    pk = sub.add_parser("packet", help="show what Hermes prefetch would inject for a query (read-only)",
+                        parents=[common])
+    pk.add_argument("query")
+    pk.add_argument("--explain", action="store_true", help="also show why each memory is in or out")
+    pk.add_argument("-s", "--scope", action="append",
+                    help="read scope (repeatable). The first is the agent scope, the only one past "
+                         "conversation comes from. Default: hermes/default and user")
+    pk.add_argument("--budget", type=int, default=None, help="estimated token cap (prefetch_budget_tokens, default 700)")
+    pk.add_argument("-n", "--k", type=int, default=None, help="max memories (prefetch_k, default 6)")
+    pk.add_argument("--min-score", type=float, default=None, help="score floor (prefetch_min_score, default 0.45)")
+    pk.add_argument("--linked", action="store_true", help="also try one linked fact (prefetch_linked)")
+    pk.add_argument("--no-episodes", action="store_true", help="leave out past conversation (capture_turns off)")
 
     sub.add_parser("stats", help="store statistics", parents=[common])
     m = sub.add_parser("maintain", help="purge expired/deleted, optimize indexes", parents=[common])
@@ -266,6 +321,9 @@ def main(argv: list[str] | None = None) -> int:
                           f"{(it['content'] or '')[:100]}")
             print(f"\n{'healthy' if res['ok'] else 'problems found'} · db {res['db']}")
         return 0 if res["ok"] else 1
+
+    if args.cmd == "packet":
+        return _packet(args)
 
     store = MemoryStore(args.db)
     try:

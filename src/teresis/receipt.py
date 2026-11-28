@@ -66,13 +66,15 @@ def receipt(store, memory_id: str) -> dict[str, Any] | None:
     }
 
 
-def _lines(r: dict[str, Any]) -> list[str]:
+def _lines(r: dict[str, Any], injected: str = "") -> list[str]:
     lines = [f"[{r['id']}] {r['content']}"]
     kind = r["kind"] + (f" {r['key']}" if r.get("key") else "")
     status = r["status"] + (f" (replaced by {r['superseded_by']})" if r.get("superseded_by") else "")
     if r["status"] == "candidate":
         status += " (unreviewed, never injected)"
     lines.append(f"- {kind} in {r['scope']}; status: {status}")
+    if injected:
+        lines.append(f"- injected: {injected}")
     said = r["said"]
     if r.get("platform"):
         said += f" on {r['platform']}"
@@ -88,11 +90,16 @@ def _lines(r: dict[str, Any]) -> list[str]:
     return lines
 
 
-def render(receipts: list[dict[str, Any]], missing: list[str]) -> str:
-    """Human-readable receipts, one block each, separated by a blank line."""
+def render(receipts: list[dict[str, Any]], missing: list[str], notes: dict[str, str] | None = None) -> str:
+    """Human-readable receipts, one block each, separated by a blank line.
+
+    ``notes`` maps an id to why the packet builder injected it (``evidence.injected_note``);
+    it adds one text line and leaves the receipt keys unchanged.
+    """
     if not receipts and not missing:
         return "No memories to explain."
-    blocks = ["\n".join(_lines(r)) for r in receipts]
+    notes = notes or {}
+    blocks = ["\n".join(_lines(r, notes.get(r["id"], ""))) for r in receipts]
     blocks += [f"[{i}] not found" for i in missing]
     return "\n\n".join(blocks)
 

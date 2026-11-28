@@ -452,6 +452,33 @@ To see what prefetch returns on a small synthetic replay (a diagnostic, not a be
 PYTHONPATH=src python bench/hermes_packet.py
 ```
 
+#### Why a memory is in or out: `teresis packet --explain`
+
+`teresis packet` builds the packet Hermes prefetch would inject for a question, with the same code
+(`evidence.build_packet`), and prints it. It only reads the database: no access counts, no
+reinforcement, no other writes.
+
+```bash
+teresis packet --explain "Who owns the billing service?"
+teresis packet --explain --db /path/to/memory.db -s hermes/work -s user --budget 400 "Who owns billing?"
+teresis packet --json --explain "Who owns the billing service?"   # items and left-out rows as JSON
+```
+
+Every included memory has a reason code: `direct_hit`, `linked_peer` or `episode` (`review_note` for
+the review note). Every row it looked at and left out has one too: the trust gate's reason
+(`candidate`, `unreviewed_auto`, `system_turn`, `threat`, ...), `below_floor`, `no_anchor`,
+`over_budget`, `packet_full`, `episode_cap`, `repeats_fact` or `duplicate`. `--explain` also lists rows
+the word index matches that recall did not return, as `superseded`, `expired`, `forgotten`,
+`out_of_scope` or `rank_cutoff`; forgotten and out-of-scope rows show only their id. An empty packet
+says why (`no_anchor`, `no_match`, `below_floor`, `budget_zero`, `trivial_query`). Reason codes are
+never injected.
+
+The command does not read the Hermes profile config. It uses the defaults (`prefetch_k` 6,
+`prefetch_budget_tokens` 700, `prefetch_min_score` 0.45, `prefetch_linked` off, past conversation on,
+scopes `hermes/default` and `user`); pass `--db`, `-s/--scope`, `-n/--k`, `--budget`, `--min-score`,
+`--linked` or `--no-episodes` to match a profile. The first `--scope` is the agent scope, the only one
+past conversation comes from.
+
 Credential-shaped values (including published AWS access-key examples) are redacted before
 the fact is stored. Ordinary placeholders like `API_KEY=your-api-key-here` still pass through.
 
@@ -585,7 +612,8 @@ Hermes passes `turn_author` and `platform`, not an explicit origin for the turn.
 
 `memory_why` returns a receipt for a memory: who said it, when, on which platform and profile, what
 it replaced, and whether it is current, superseded, forgotten or still a candidate. Called with no
-arguments inside Hermes it explains what was injected this turn and last turn; the same text is
+arguments inside Hermes it explains what was injected this turn and last turn, with the packet's reason
+for each (`injected: matched the question`, a linked fact, past conversation); the same receipt text is
 available on the command line as `teresis why <id>`. As a tool reply it is clipped like recall: 1200
 characters per memory text and 20000 for the reply.
 
