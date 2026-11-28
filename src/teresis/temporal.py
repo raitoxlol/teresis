@@ -180,3 +180,32 @@ def parse_time_window(query: str, now: float) -> TimeWindow | None:
         return TimeWindow(_utc(y, 1, 1), _utc(y, 12, 31, True), soft_margin=60 * DAY)
 
     return None
+
+
+# --------------------------------------------------------------------------- relative dates in stored text
+_DAYNAMES = r"(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)"
+_RE_RELATIVE_DATE = re.compile(
+    r"\b(?:today|tonight|tomorrow|yesterday|tmrw|"
+    r"this\s+(?:morning|afternoon|evening|weekend|week|month|year|" + _DAYNAMES + r")|"
+    r"(?:next|last|coming|upcoming)\s+(?:week|weekend|month|year|night|" + _DAYNAMES + r")|"
+    r"(?:in\s+\w+\s+(?:days?|weeks?|months?|years?))|"
+    r"(?:\w+\s+(?:days?|weeks?|months?|years?)\s+(?:ago|from\s+now))|"
+    r"the\s+day\s+(?:after|before)\s+\w+)\b", re.I)
+
+
+def has_relative_date(text: str) -> bool:
+    """True when ``text`` says "tomorrow", "next week", "in 3 days"... so its meaning depends on when it was written."""
+    return bool(_RE_RELATIVE_DATE.search(text or ""))
+
+
+def saved_note(created_at: float) -> str:
+    """``[saved Tue 2026-11-24]`` in the machine's local calendar, so a reader can anchor "tomorrow"."""
+    import time as _time
+
+    return "[saved " + _time.strftime("%a %Y-%m-%d", _time.localtime(created_at)) + "]"
+
+
+def with_saved_note(content: str, created_at: float, *, display_content: str | None = None) -> str:
+    """Detect relative dates in the original content and annotate the displayed text."""
+    shown = content if display_content is None else display_content
+    return f"{shown} {saved_note(created_at)}" if has_relative_date(content) else shown

@@ -7,6 +7,7 @@ import sys
 from typing import Any, Callable, TextIO
 
 from . import __version__
+from . import temporal as _temporal
 from . import threats as _threats
 from .store import MemoryStore
 
@@ -172,7 +173,8 @@ def _fmt(mems) -> str:
             bits.append(f"key={m.key}")
         if m.superseded_by:
             bits.append(f"superseded_by={m.superseded_by}")
-        lines.append(f"[{m.id}] ({', '.join(bits)}) {_clip(m.content)}")
+        content = _temporal.with_saved_note(m.content, m.created_at, display_content=_clip(m.content))
+        lines.append(f"[{m.id}] ({', '.join(bits)}) {content}")
     text = "\n".join(lines)
     if len(text) > MAX_TOOL_OUTPUT_CHARS:
         text = text[:MAX_TOOL_OUTPUT_CHARS] + f"\n... [truncated, {len(lines)} results; narrow the query or lower k]"
